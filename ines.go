@@ -23,35 +23,38 @@ type iNESHeader struct {
 const magicNumber = 0x1a53454e
 
 // Load a file, read the header and PRG-ROM and CHR-ROM
-func loadFile(path string) error {
+func loadFile(path string) (*game, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return errors.Wrap(err, "couldn't open")
+		return nil, errors.Wrap(err, "couldn't open")
 	}
 	defer file.Close()
 
 	header := iNESHeader{}
 	err = binary.Read(file, binary.LittleEndian, &header)
 	if err != nil {
-		return errors.Wrap(err, "read")
+		return nil, errors.Wrap(err, "read")
 	}
 
 	if header.MagicNumber != magicNumber {
-		return errors.New("Invalid nes file")
+		return nil, errors.New("Invalid nes file")
 	}
 
 	// TODO not doing anything with these bytes just yet
 	prg := make([]byte, int(header.NumPRG)*0x4000)
 	_, err = io.ReadFull(file, prg)
 	if err != nil {
-		return errors.Wrap(err, "PRG")
+		return nil, errors.Wrap(err, "PRG")
 	}
 
 	chr := make([]byte, int(header.NumCHR)*0x2000)
 	_, err = io.ReadFull(file, chr)
 	if err != nil {
-		return errors.Wrap(err, "CHR")
+		return nil, errors.Wrap(err, "CHR")
 	}
 
-	return nil
+	return &game{
+		PRG: prg,
+		CHR: chr,
+	}, nil
 }
