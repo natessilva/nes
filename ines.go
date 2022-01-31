@@ -1,4 +1,4 @@
-package main
+package nes
 
 import (
 	"encoding/binary"
@@ -16,14 +16,14 @@ type iNESHeader struct {
 	Control1    byte
 	Control2    byte
 	NumRAM      byte
-	_           [7]byte
+	Unused      [7]byte
 }
 
 // Every .nes file starts with ASCII NES followed by $1A
 const magicNumber = 0x1a53454e
 
 // Load a file, read the header and PRG-ROM and CHR-ROM
-func loadFile(path string) (*game, error) {
+func LoadFile(path string) (*Cart, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't open")
@@ -53,7 +53,7 @@ func loadFile(path string) (*game, error) {
 		return nil, errors.Wrap(err, "CHR")
 	}
 
-	return &game{
+	return &Cart{
 		PRG: prg,
 		CHR: chr,
 	}, nil
