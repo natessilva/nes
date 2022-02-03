@@ -1,6 +1,20 @@
 package nes
 
-import "log"
+import (
+	"fmt"
+	"log"
+)
+
+const (
+	C = iota
+	Z
+	I
+	D
+	B
+	_
+	V
+	N
+)
 
 type CPU struct {
 	PC  uint16 // 16 bit program counter
@@ -18,9 +32,16 @@ type CPU struct {
 }
 
 func NewCPU(cart *Cart) *CPU {
-	return &CPU{
+	cpu := &CPU{
 		Cart: cart,
 	}
+	cpu.Reset()
+	return cpu
+}
+
+func (c *CPU) Reset() {
+	// Program counter always starts at 0xFFFC
+	c.PC = c.ReadWord(0xFFFC)
 }
 
 // ReadByte reads a single byte from either
@@ -31,6 +52,10 @@ func (c *CPU) ReadByte(address uint16) byte {
 	// first 8KB
 	if address < 0x2000 {
 		return c.RAM[address%0x800]
+	}
+	// TODO eventually implement memory mapper
+	if address >= 0x8000 {
+		return c.Cart.ReadByte(address)
 	}
 
 	// TODO implement ROM and IO
@@ -46,6 +71,25 @@ func (c *CPU) ReadWord(address uint16) uint16 {
 	// The CPU is little endian so least significant byte
 	// first.
 	return b2<<8 | b1
+}
+
+// Step looks up the opcode at the PC, executes
+// the instructionm, and steps the PC forward
+func (c *CPU) Step() {
+	fmt.Printf("status bits before: %08b\n", c.Status)
+
+	opcode := c.ReadByte(c.PC)
+	fmt.Printf("opcode: %x\n", opcode)
+	c.PC += 1
+
+	switch opcode {
+	case 0x78:
+		c.SEI()
+	default:
+		fmt.Println("unknown opcode")
+	}
+
+	fmt.Printf("status bits after: %08b\n", c.Status)
 }
 
 func (c *CPU) ADC() {
@@ -232,8 +276,9 @@ func (c *CPU) SED() {
 	log.Fatal("Not implemented yet")
 }
 
+// Set interrupt disable flag
 func (c *CPU) SEI() {
-	log.Fatal("Not implemented yet")
+	c.Status |= (1 << I)
 }
 
 func (c *CPU) STA() {

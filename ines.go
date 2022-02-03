@@ -40,7 +40,6 @@ func LoadFile(path string) (*Cart, error) {
 		return nil, errors.New("Invalid nes file")
 	}
 
-	// TODO not doing anything with these bytes just yet
 	prg := make([]byte, int(header.NumPRG)*0x4000)
 	_, err = io.ReadFull(file, prg)
 	if err != nil {
