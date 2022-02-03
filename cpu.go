@@ -6,15 +6,27 @@ import (
 )
 
 const (
-	C = iota
-	Z
-	I
-	D
-	B
-	_
-	V
-	N
+	FLAG_C byte = 1 << iota
+	FLAG_Z
+	FLAG_I
+	FLAG_D
+	FLAG_B
+	FLAG_UNUSED
+	FLAG_V
+	FLAG_N
 )
+
+func setBits(value, flags byte) byte {
+	return value | flags
+}
+
+func resetBits(value, flags byte) byte {
+	return value & mask(flags)
+}
+
+func mask(flag byte) byte {
+	return ^flag
+}
 
 type CPU struct {
 	PC  uint16 // 16 bit program counter
@@ -76,20 +88,33 @@ func (c *CPU) ReadWord(address uint16) uint16 {
 // Step looks up the opcode at the PC, executes
 // the instructionm, and steps the PC forward
 func (c *CPU) Step() {
-	fmt.Printf("status bits before: %08b\n", c.Status)
 
 	opcode := c.ReadByte(c.PC)
-	fmt.Printf("opcode: %x\n", opcode)
+	fmt.Printf("opcode: %02x\n", opcode)
 	c.PC += 1
 
 	switch opcode {
 	case 0x78:
 		c.SEI()
+	case 0xD8:
+		c.CLD()
+	case 0xA2:
+		c.LDX(c.ImmediateMode())
 	default:
 		fmt.Println("unknown opcode")
 	}
+	fmt.Printf("status bits before: %08b\n", c.Status)
+	fmt.Printf("X: %02x\n", c.X)
+}
 
-	fmt.Printf("status bits after: %08b\n", c.Status)
+// Addressing modes
+
+// ImmediateMode simply reads the value after the opcode
+// and increments PC again
+func (c *CPU) ImmediateMode() byte {
+	b := c.ReadByte(c.PC)
+	c.PC++
+	return b
 }
 
 func (c *CPU) ADC() {
@@ -148,8 +173,11 @@ func (c *CPU) CLC() {
 	log.Fatal("Not implemented yet")
 }
 
+// Clear decimal flag. Not sure if I need this
+// because the NES doesn't support decimal
+// mode anyway
 func (c *CPU) CLD() {
-	log.Fatal("Not implemented yet")
+	c.Status = resetBits(c.Status, FLAG_D)
 }
 
 func (c *CPU) CLI() {
@@ -212,8 +240,11 @@ func (c *CPU) LDA() {
 	log.Fatal("Not implemented yet")
 }
 
-func (c *CPU) LDX() {
-	log.Fatal("Not implemented yet")
+// Load X with memory address
+// sets N and Z flags
+func (c *CPU) LDX(value byte) {
+	c.X = value
+	c.Status = setBits(c.Status, FLAG_N|FLAG_Z)
 }
 
 func (c *CPU) LDY() {
@@ -278,7 +309,7 @@ func (c *CPU) SED() {
 
 // Set interrupt disable flag
 func (c *CPU) SEI() {
-	c.Status |= (1 << I)
+	c.Status = setBits(c.Status, FLAG_I)
 }
 
 func (c *CPU) STA() {

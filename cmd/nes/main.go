@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
@@ -15,8 +14,6 @@ func main() {
 		log.Fatal(err)
 	}
 	cpu := nes.NewCPU(cart)
-
-	fmt.Printf("%x\n", cpu.ReadByte(cpu.PC))
 
 	for i := 0; i < 10; i++ {
 		cpu.Step()
