@@ -24,16 +24,20 @@ func resetBits(value, flags byte) byte {
 	return value & mask(flags)
 }
 
-func mask(flag byte) byte {
-	return ^flag
+func mask(flags byte) byte {
+	return ^flags
+}
+
+func isSet(value, flags byte) bool {
+	return value&flags > 0
 }
 
 type CPU struct {
-	PC  uint16 // 16 bit program counter
-	SP  byte   // 8 bit stack pointer
-	Acc byte   // 8 bit accumulator
-	X   byte   // 8 bit register
-	Y   byte   // 8 bit register
+	PC uint16 // 16 bit program counter
+	SP byte   // 8 bit stack pointer
+	A  byte   // 8 bit Accumulator
+	X  byte   // 8 bit register
+	Y  byte   // 8 bit register
 
 	// Status bits NV_BDIZC
 	Status byte
@@ -65,6 +69,10 @@ func (c *CPU) ReadByte(address uint16) byte {
 	if address < 0x2000 {
 		return c.RAM[address%0x800]
 	}
+	if address < 0x4000 {
+		//TODO read from PPU
+		return 0
+	}
 	// TODO eventually implement memory mapper
 	if address >= 0x8000 {
 		return c.Cart.ReadByte(address)
@@ -85,6 +93,31 @@ func (c *CPU) ReadWord(address uint16) uint16 {
 	return b2<<8 | b1
 }
 
+func (c *CPU) Write(address uint16, value byte) {
+	switch {
+	case address < 0x2000:
+		c.RAM[address%0x0800] = value
+	}
+}
+
+// Set the zero flag
+func (c *CPU) SetZ(value byte) {
+	if value == 0 {
+		c.Status = setBits(c.Status, FLAG_Z)
+	} else {
+		c.Status = resetBits(c.Status, FLAG_Z)
+	}
+}
+
+// Set the negative flag
+func (c *CPU) SetN(value byte) {
+	if int8(value) < 0 {
+		c.Status = setBits(c.Status, FLAG_N)
+	} else {
+		c.Status = resetBits(c.Status, FLAG_N)
+	}
+}
+
 // Step looks up the opcode at the PC, executes
 // the instructionm, and steps the PC forward
 func (c *CPU) Step() {
@@ -100,21 +133,57 @@ func (c *CPU) Step() {
 		c.CLD()
 	case 0xA2:
 		c.LDX(c.ImmediateMode())
+	case 0x9A:
+		c.TXS()
+	case 0xAD:
+		c.LDA(c.AbsoluteMode())
+	case 0x10:
+		c.BPL(c.RelativeMode())
+	case 0xA9:
+		c.LDA(uint16(c.ImmediateMode()))
+	case 0x8D:
+		c.STA(c.AbsoluteMode())
+	case 0x8E:
+		c.STX(c.AbsoluteMode())
+	case 0xA0:
+		c.LDY(c.ImmediateMode())
 	default:
 		fmt.Println("unknown opcode")
 	}
-	fmt.Printf("status bits before: %08b\n", c.Status)
-	fmt.Printf("X: %02x\n", c.X)
+	// fmt.Printf("status bits before: %08b\n", c.Status)
+	// fmt.Printf("A: %02x\n", c.A)
+	// fmt.Printf("X: %02x\n", c.X)
+	// fmt.Printf("SP: %02x\n", c.SP)
 }
 
 // Addressing modes
 
-// ImmediateMode simply reads the value after the opcode
-// and increments PC again
+// ImmediateMode reads the byte after the opcode
+// and increments PC past it
 func (c *CPU) ImmediateMode() byte {
 	b := c.ReadByte(c.PC)
 	c.PC++
 	return b
+}
+
+// AbsoluteMode reads the word after the opcode
+// and increments PC past it
+func (c *CPU) AbsoluteMode() uint16 {
+	b := c.ReadWord(c.PC)
+	c.PC += 2
+	return b
+}
+
+// RelativeMode reads the offset after the opcode
+// and adds it to the PC
+// Branch offsets are signed 8-bit values, -128 ... +127
+// negative offsets in two's complement.
+func (c *CPU) RelativeMode() uint16 {
+
+	offset := uint16(c.ReadByte(c.PC))
+	c.PC += 1
+
+	return offset
 }
 
 func (c *CPU) ADC() {
@@ -153,8 +222,18 @@ func (c *CPU) BNE() {
 	log.Fatal("Not implemented yet")
 }
 
-func (c *CPU) BPL() {
-	log.Fatal("Not implemented yet")
+// Branch on N=0
+func (c *CPU) BPL(offset uint16) {
+	if !isSet(c.Status, FLAG_N) {
+		fmt.Printf("branching %04x\n", offset)
+		c.PC += offset
+		// negative offset
+		if offset >= 0x80 {
+			c.PC -= 0x100
+		}
+	} else {
+		fmt.Printf("not branching\n")
+	}
 }
 
 func (c *CPU) BRK() {
@@ -236,19 +315,29 @@ func (c *CPU) JSR() {
 	log.Fatal("Not implemented yet")
 }
 
-func (c *CPU) LDA() {
-	log.Fatal("Not implemented yet")
+// Load A with the value at address
+// sets N and Z flags
+func (c *CPU) LDA(address uint16) {
+	fmt.Printf("address: %04x\n", address)
+	c.A = c.ReadByte(address)
+	c.SetN(c.A)
+	c.SetZ(c.A)
 }
 
-// Load X with memory address
+// Load X with value
 // sets N and Z flags
 func (c *CPU) LDX(value byte) {
 	c.X = value
-	c.Status = setBits(c.Status, FLAG_N|FLAG_Z)
+	c.SetN(c.X)
+	c.SetZ(c.X)
 }
 
-func (c *CPU) LDY() {
-	log.Fatal("Not implemented yet")
+// Load X with value
+// sets N and Z flags
+func (c *CPU) LDY(value byte) {
+	c.Y = value
+	c.SetN(c.Y)
+	c.SetZ(c.Y)
 }
 
 func (c *CPU) LSR() {
@@ -312,12 +401,14 @@ func (c *CPU) SEI() {
 	c.Status = setBits(c.Status, FLAG_I)
 }
 
-func (c *CPU) STA() {
-	log.Fatal("Not implemented yet")
+// Store accumulator in memory
+func (c *CPU) STA(address uint16) {
+	c.Write(address, c.A)
 }
 
-func (c *CPU) STX() {
-	log.Fatal("Not implemented yet")
+// Store X in memoory
+func (c *CPU) STX(address uint16) {
+	c.Write(address, c.X)
 }
 
 func (c *CPU) STY() {
@@ -340,8 +431,9 @@ func (c *CPU) TXA() {
 	log.Fatal("Not implemented yet")
 }
 
+// Transfer X to Stack Pointer
 func (c *CPU) TXS() {
-	log.Fatal("Not implemented yet")
+	c.SP = c.X
 }
 
 func (c *CPU) TYA() {
