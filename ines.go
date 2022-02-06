@@ -29,9 +29,12 @@ func LoadFile(path string) (*Cart, error) {
 		return nil, errors.Wrap(err, "couldn't open")
 	}
 	defer file.Close()
+	return ReadFile(file)
+}
 
+func ReadFile(r io.Reader) (*Cart, error) {
 	header := iNESHeader{}
-	err = binary.Read(file, binary.LittleEndian, &header)
+	err := binary.Read(r, binary.LittleEndian, &header)
 	if err != nil {
 		return nil, errors.Wrap(err, "read")
 	}
@@ -41,13 +44,13 @@ func LoadFile(path string) (*Cart, error) {
 	}
 
 	prg := make([]byte, int(header.NumPRG)*0x4000)
-	_, err = io.ReadFull(file, prg)
+	_, err = io.ReadFull(r, prg)
 	if err != nil {
 		return nil, errors.Wrap(err, "PRG")
 	}
 
 	chr := make([]byte, int(header.NumCHR)*0x2000)
-	_, err = io.ReadFull(file, chr)
+	_, err = io.ReadFull(r, chr)
 	if err != nil {
 		return nil, errors.Wrap(err, "CHR")
 	}
