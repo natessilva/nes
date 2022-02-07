@@ -119,8 +119,10 @@ func (c *CPU) SetN(value byte) {
 }
 
 // Step looks up the opcode at the PC, executes
-// the instructionm, and steps the PC forward
-func (c *CPU) Step() {
+// the instruction, and steps the PC forward.
+// Returns the number of CPU cycles the opcode
+// took
+func (c *CPU) Step() int {
 
 	opcode := c.ReadByte(c.PC)
 	fmt.Printf("opcode: %02x\n", opcode)
@@ -129,31 +131,37 @@ func (c *CPU) Step() {
 	switch opcode {
 	case 0x78:
 		c.SEI()
+		return 2
 	case 0xD8:
 		c.CLD()
+		return 2
 	case 0xA2:
 		c.LDX(c.ImmediateMode())
+		return 2
 	case 0x9A:
 		c.TXS()
+		return 2
 	case 0xAD:
 		c.LDA(c.AbsoluteMode())
+		return 4
 	case 0x10:
-		c.BPL(c.RelativeMode())
+		return c.BPL(c.RelativeMode())
 	case 0xA9:
 		c.LDA(uint16(c.ImmediateMode()))
+		return 2
 	case 0x8D:
 		c.STA(c.AbsoluteMode())
+		return 4
 	case 0x8E:
 		c.STX(c.AbsoluteMode())
+		return 4
 	case 0xA0:
 		c.LDY(c.ImmediateMode())
+		return 2
 	default:
 		fmt.Println("unknown opcode")
+		return 0
 	}
-	// fmt.Printf("status bits before: %08b\n", c.Status)
-	// fmt.Printf("A: %02x\n", c.A)
-	// fmt.Printf("X: %02x\n", c.X)
-	// fmt.Printf("SP: %02x\n", c.SP)
 }
 
 // Addressing modes
@@ -222,18 +230,30 @@ func (c *CPU) BNE() {
 	log.Fatal("Not implemented yet")
 }
 
+// The page is the high byte. If the high bytes
+// differ then we've crossed a page boundary
+func pageCrossed(address1, address2 uint16) bool {
+	return address1&0xFF00 != address2&0xFF00
+}
+
 // Branch on N=0
-func (c *CPU) BPL(offset uint16) {
+func (c *CPU) BPL(offset uint16) int {
 	if !isSet(c.Status, FLAG_N) {
 		fmt.Printf("branching %04x\n", offset)
+		pc := c.PC
 		c.PC += offset
 		// negative offset
 		if offset >= 0x80 {
 			c.PC -= 0x100
 		}
-	} else {
-		fmt.Printf("not branching\n")
+		// Add a cycle for branching
+		// Add another for crossing pages
+		if pageCrossed(pc, c.PC) {
+			return 4
+		}
+		return 3
 	}
+	return 2
 }
 
 func (c *CPU) BRK() {
