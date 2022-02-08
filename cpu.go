@@ -1,7 +1,6 @@
 package nes
 
 import (
-	"fmt"
 	"log"
 )
 
@@ -29,6 +28,8 @@ type CPU struct {
 	RAM [2048]byte
 
 	Cart *Cart
+
+	PPU *PPU
 }
 
 func NewCPU(cart *Cart) *CPU {
@@ -54,8 +55,8 @@ func (c *CPU) ReadByte(address uint16) byte {
 		return c.RAM[address%0x800]
 	}
 	if address < 0x4000 {
-		//TODO read from PPU registers
-		return 0
+		val := c.PPU.ReadRegister(address)
+		return val
 	}
 	// TODO eventually implement memory mapper
 	if address >= 0x8000 {
@@ -81,6 +82,10 @@ func (c *CPU) Write(address uint16, value byte) {
 	switch {
 	case address < 0x2000:
 		c.RAM[address%0x0800] = value
+	case address < 0x4000:
+		c.PPU.WriteRegister(address, value)
+	default:
+		log.Fatalf("invalid write address %04x\n", address)
 	}
 }
 
@@ -142,7 +147,7 @@ func (c *CPU) Step() int {
 		c.LDY(c.ImmediateMode())
 		return 2
 	default:
-		fmt.Println("unknown opcode")
+		log.Fatalf("unknown opcode %02x\n", opcode)
 		return 0
 	}
 }
