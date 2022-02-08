@@ -6,31 +6,15 @@ import (
 )
 
 const (
-	FLAG_C byte = 1 << iota
-	FLAG_Z
-	FLAG_I
-	FLAG_D
-	FLAG_B
-	FLAG_UNUSED
-	FLAG_V
-	FLAG_N
+	CPU_FLAG_C byte = 1 << iota
+	CPU_FLAG_Z
+	CPU_FLAG_I
+	CPU_FLAG_D
+	CPU_FLAG_B
+	CPU_FLAG_UNUSED
+	CPU_FLAG_V
+	CPU_FLAG_N
 )
-
-func setBits(value, flags byte) byte {
-	return value | flags
-}
-
-func resetBits(value, flags byte) byte {
-	return value & mask(flags)
-}
-
-func mask(flags byte) byte {
-	return ^flags
-}
-
-func isSet(value, flags byte) bool {
-	return value&flags > 0
-}
 
 type CPU struct {
 	PC uint16 // 16 bit program counter
@@ -70,7 +54,7 @@ func (c *CPU) ReadByte(address uint16) byte {
 		return c.RAM[address%0x800]
 	}
 	if address < 0x4000 {
-		//TODO read from PPU
+		//TODO read from PPU registers
 		return 0
 	}
 	// TODO eventually implement memory mapper
@@ -103,18 +87,18 @@ func (c *CPU) Write(address uint16, value byte) {
 // Set the zero flag
 func (c *CPU) SetZ(value byte) {
 	if value == 0 {
-		c.Status = setBits(c.Status, FLAG_Z)
+		c.Status = setBits(c.Status, CPU_FLAG_Z)
 	} else {
-		c.Status = resetBits(c.Status, FLAG_Z)
+		c.Status = resetBits(c.Status, CPU_FLAG_Z)
 	}
 }
 
 // Set the negative flag
 func (c *CPU) SetN(value byte) {
 	if int8(value) < 0 {
-		c.Status = setBits(c.Status, FLAG_N)
+		c.Status = setBits(c.Status, CPU_FLAG_N)
 	} else {
-		c.Status = resetBits(c.Status, FLAG_N)
+		c.Status = resetBits(c.Status, CPU_FLAG_N)
 	}
 }
 
@@ -125,7 +109,6 @@ func (c *CPU) SetN(value byte) {
 func (c *CPU) Step() int {
 
 	opcode := c.ReadByte(c.PC)
-	fmt.Printf("opcode: %02x\n", opcode)
 	c.PC += 1
 
 	switch opcode {
@@ -238,8 +221,7 @@ func pageCrossed(address1, address2 uint16) bool {
 
 // Branch on N=0
 func (c *CPU) BPL(offset uint16) int {
-	if !isSet(c.Status, FLAG_N) {
-		fmt.Printf("branching %04x\n", offset)
+	if !isAnySet(c.Status, CPU_FLAG_N) {
 		pc := c.PC
 		c.PC += offset
 		// negative offset
@@ -276,7 +258,7 @@ func (c *CPU) CLC() {
 // because the NES doesn't support decimal
 // mode anyway
 func (c *CPU) CLD() {
-	c.Status = resetBits(c.Status, FLAG_D)
+	c.Status = resetBits(c.Status, CPU_FLAG_D)
 }
 
 func (c *CPU) CLI() {
@@ -338,7 +320,6 @@ func (c *CPU) JSR() {
 // Load A with the value at address
 // sets N and Z flags
 func (c *CPU) LDA(address uint16) {
-	fmt.Printf("address: %04x\n", address)
 	c.A = c.ReadByte(address)
 	c.SetN(c.A)
 	c.SetZ(c.A)
@@ -418,7 +399,7 @@ func (c *CPU) SED() {
 
 // Set interrupt disable flag
 func (c *CPU) SEI() {
-	c.Status = setBits(c.Status, FLAG_I)
+	c.Status = setBits(c.Status, CPU_FLAG_I)
 }
 
 // Store accumulator in memory

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
@@ -15,11 +14,15 @@ func main() {
 		log.Fatal(err)
 	}
 	cpu := nes.NewCPU(cart)
-	cycles := 0
-	for i := 0; i < 10; i++ {
-		c := cpu.Step()
-		cycles += c
-		fmt.Println("cycles", c)
+	ppu := nes.NewPPU()
+	for {
+		cycles := cpu.Step()
+		cycles *= 3
+		for ; cycles > 0; cycles-- {
+			ppu.Step()
+		}
+		if ppu.Frame == 1 {
+			break
+		}
 	}
-	fmt.Println("total cycles", cycles)
 }
