@@ -2,6 +2,7 @@ package nes
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 
@@ -13,8 +14,8 @@ type iNESHeader struct {
 	MagicNumber int32
 	NumPRG      byte
 	NumCHR      byte
-	Control1    byte
-	Control2    byte
+	Flags6      byte
+	Flags7      byte
 	NumRAM      byte
 	Unused      [7]byte
 }
@@ -55,8 +56,12 @@ func ReadFile(r io.Reader) (*Cart, error) {
 		return nil, errors.Wrap(err, "CHR")
 	}
 
+	mirror := header.Flags6 & 1
+	fmt.Printf("mirroging mode: %b\n", mirror)
+
 	return &Cart{
-		PRG: prg,
-		CHR: chr,
+		Mirror: mirror,
+		PRG:    prg,
+		CHR:    chr,
 	}, nil
 }

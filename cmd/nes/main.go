@@ -14,7 +14,7 @@ func main() {
 		log.Fatal(err)
 	}
 	cpu := nes.NewCPU(cart)
-	ppu := nes.NewPPU()
+	ppu := nes.NewPPU(cart)
 	// todo this is a weird cyclical dedendancy
 	cpu.PPU = ppu
 	for {
@@ -22,9 +22,6 @@ func main() {
 		cycles *= 3
 		for ; cycles > 0; cycles-- {
 			ppu.Step()
-		}
-		if ppu.Frame == 2 {
-			break
 		}
 	}
 }

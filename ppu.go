@@ -45,6 +45,8 @@ const (
 const FLAG_NMI_OCCURRED = STATUS_V
 
 type PPU struct {
+	cart *Cart
+
 	// Cycle counting
 	cycle    int // There are 341 cycles per scanline
 	scanline int // There are 262 scanlines
@@ -60,10 +62,15 @@ type PPU struct {
 	ctrl   byte
 	mask   byte
 	status byte
+
+	// 2kb of nameTable stores the nameTable
+	nameTable [0x800]byte
 }
 
-func NewPPU() *PPU {
-	return &PPU{}
+func NewPPU(cart *Cart) *PPU {
+	return &PPU{
+		cart: cart,
+	}
 }
 
 // registers are repeated every 8 bytes
@@ -112,8 +119,32 @@ func (p *PPU) WriteRegister(address uint16, value byte) {
 			p.v = p.t
 			p.w = 0
 		}
+	case 7:
+		p.Write(p.v, value)
+		if !isAnySet(p.ctrl, CTRL_I) {
+			p.v += 1
+		} else {
+			p.v += 32
+		}
 	default:
 		log.Fatalf("write invalid register %04x\n", address)
+	}
+}
+
+func (p *PPU) Write(address uint16, value byte) {
+	address %= 0x4000
+	switch {
+	// pattern table
+	case address < 0x2000:
+		log.Fatalf("pattern table write not implemented yet")
+	// name table
+	case address < 0x3F00:
+		p.nameTable[mirror(p.v, p.cart.Mirror)] = value
+	// palette ram
+	case address < 0x4000:
+		log.Fatalf("palette  RAM not implemented yet")
+	default:
+		log.Fatalf("invalid write address: %02x\n", address)
 	}
 }
 
@@ -146,20 +177,52 @@ func (p *PPU) Step() {
 
 	// vblank starts on the second cycle of scanline 241
 	if p.scanline == 241 && p.cycle == 1 {
-		p.vblank()
+		p.setVBlank()
+	}
+
+	// vblank ends on the second cycle of scanline 241
+	if p.scanline == 261 && p.cycle == 1 {
+		p.clearVBlank()
 	}
 }
 
-func (p *PPU) vblank() {
+func (p *PPU) setVBlank() {
+	fmt.Println("setVBlank")
 	p.status = setBits(p.status, STATUS_V)
+	p.nmi()
+}
+
+func (p *PPU) clearVBlank() {
+	fmt.Println("clearVBlank")
+	p.status = resetBits(p.status, STATUS_V)
 	p.nmi()
 }
 
 // generate NMI if necessary
 func (p *PPU) nmi() {
 	if isAnySet(p.status, STATUS_V) && isAnySet(p.ctrl, CTRL_V) {
-		fmt.Println("generate NMI!")
+		log.Fatal("NMI not yet implemented")
 	} else {
 		fmt.Println("no NMI")
 	}
+}
+
+// there are 2 1k name tables mirrored across a 4k address space
+// starting a $2000
+func mirror(address uint16, mode byte) uint16 {
+	// translate the address onto the 4k space
+	address = (address - 0x2000) % 0x1000
+	// which of the 4 tables?
+	table := address / 0x400
+	// where at within the table
+	tableAddress := address % 0x400
+
+	// horizontal 0011
+	if mode == H_MIRROR {
+		table /= 2
+		return table*0x400 + tableAddress
+	} else {
+		log.Fatalln("vertical mirroring not yet implemented")
+	}
+	return 0
 }

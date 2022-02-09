@@ -146,6 +146,21 @@ func (c *CPU) Step() int {
 	case 0xA0:
 		c.LDY(c.ImmediateMode())
 		return 2
+	case 0xCA:
+		c.DEX()
+		return 2
+	case 0xD0:
+		return c.BNE(c.RelativeMode())
+	case 0x88:
+		c.DEY()
+		return 2
+	case 0xBD:
+		address, crossed := c.AbsoluteX()
+		c.LDA(address)
+		if crossed {
+			return 3
+		}
+		return 2
 	default:
 		log.Fatalf("unknown opcode %02x\n", opcode)
 		return 0
@@ -182,6 +197,15 @@ func (c *CPU) RelativeMode() uint16 {
 	return offset
 }
 
+// AbsoluteX reads the word after the opcode
+// and increments PC past it
+func (c *CPU) AbsoluteX() (uint16, bool) {
+	address := c.ReadWord(c.PC)
+	effectiveAddress := address + uint16(c.X)
+	c.PC += 2
+	return effectiveAddress, pageCrossed(address, effectiveAddress)
+}
+
 func (c *CPU) ADC() {
 	log.Fatal("Not implemented yet")
 }
@@ -214,8 +238,23 @@ func (c *CPU) BMI() {
 	log.Fatal("Not implemented yet")
 }
 
-func (c *CPU) BNE() {
-	log.Fatal("Not implemented yet")
+// Branch on Z=0
+func (c *CPU) BNE(offset uint16) int {
+	if !isAnySet(c.Status, CPU_FLAG_Z) {
+		pc := c.PC
+		c.PC += offset
+		// negative offset
+		if offset >= 0x80 {
+			c.PC -= 0x100
+		}
+		// Add a cycle for branching
+		// Add another for crossing pages
+		if pageCrossed(pc, c.PC) {
+			return 4
+		}
+		return 3
+	}
+	return 2
 }
 
 // The page is the high byte. If the high bytes
@@ -291,11 +330,15 @@ func (c *CPU) DEC() {
 }
 
 func (c *CPU) DEX() {
-	log.Fatal("Not implemented yet")
+	c.X--
+	c.SetN(c.X)
+	c.SetZ(c.X)
 }
 
 func (c *CPU) DEY() {
-	log.Fatal("Not implemented yet")
+	c.Y--
+	c.SetN(c.Y)
+	c.SetZ(c.Y)
 }
 
 func (c *CPU) EOR() {

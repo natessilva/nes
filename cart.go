@@ -1,8 +1,14 @@
 package nes
 
+const (
+	H_MIRROR = iota
+	V_MIRROR
+)
+
 type Cart struct {
-	PRG []byte
-	CHR []byte
+	Mirror byte
+	PRG    []byte
+	CHR    []byte
 }
 
 func (c *Cart) ReadByte(address uint16) byte {
