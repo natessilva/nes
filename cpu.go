@@ -97,6 +97,10 @@ func (c *CPU) write(address uint16, value byte) {
 	switch {
 	case address < 0x2000:
 		c.ram[address%0x800] = value
+	case address < 0x4014:
+		// TODO implement APU
+	case address == 0x4015:
+		// TODO implement APU
 	default:
 		log.Fatalf("invalid write address %04X", address)
 	}
@@ -111,6 +115,7 @@ func (c *CPU) Step() int {
 	cycles := c.cycles
 	var bytes uint16
 	var address uint16
+	noPageCrossed := false
 	switch opcode {
 	case 0x4C:
 		inst = c.jmp
@@ -432,6 +437,863 @@ func (c *CPU) Step() int {
 		mode = modeIndexedIndirect
 		bytes = 2
 		c.cycles += 6
+	case 0xA4:
+		inst = c.ldy
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x84:
+		inst = c.sty
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0xA6:
+		inst = c.ldx
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x05:
+		inst = c.ora
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x25:
+		inst = c.and
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x45:
+		inst = c.eor
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x65:
+		inst = c.adc
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0xC5:
+		inst = c.cmp
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0xE5:
+		inst = c.sbc
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0xE4:
+		inst = c.cpx
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x46:
+		inst = c.lsr
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+	case 0xC4:
+		inst = c.cpy
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x06:
+		inst = c.asl
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+	case 0x66:
+		inst = c.ror
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+	case 0x26:
+		inst = c.rol
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+	case 0xE6:
+		inst = c.inc
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+	case 0xC6:
+		inst = c.dec
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+	case 0xAC:
+		inst = c.ldy
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0x8C:
+		inst = c.sty
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0x2C:
+		inst = c.bit
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0x0D:
+		inst = c.ora
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0x2D:
+		inst = c.and
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0x4D:
+		inst = c.eor
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0x6D:
+		inst = c.adc
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0xCD:
+		inst = c.cmp
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0xED:
+		inst = c.sbc
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0xEC:
+		inst = c.cpx
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0xCC:
+		inst = c.cpy
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0x4E:
+		inst = c.lsr
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+	case 0x0E:
+		inst = c.asl
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+	case 0x6E:
+		inst = c.ror
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+	case 0x2E:
+		inst = c.rol
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+	case 0xEE:
+		inst = c.inc
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+	case 0xCE:
+		inst = c.dec
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+	case 0xB1:
+		inst = c.lda
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 5
+	case 0x11:
+		inst = c.ora
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 5
+	case 0x31:
+		inst = c.and
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 5
+	case 0x51:
+		inst = c.eor
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 5
+	case 0x71:
+		inst = c.adc
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 5
+	case 0xD1:
+		inst = c.cmp
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 5
+	case 0xF1:
+		inst = c.sbc
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 5
+	case 0x91:
+		inst = c.sta
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x6C:
+		inst = c.jmp
+		mode = modeIndirect
+		bytes = 3
+		c.cycles += 5
+	case 0xB9:
+		inst = c.lda
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 4
+	case 0x19:
+		inst = c.ora
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 4
+	case 0x39:
+		inst = c.and
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 4
+	case 0x59:
+		inst = c.eor
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 4
+	case 0x79:
+		inst = c.adc
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 4
+	case 0xD9:
+		inst = c.cmp
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 4
+	case 0xF9:
+		inst = c.sbc
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 4
+	case 0x99:
+		inst = c.sta
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 5
+		noPageCrossed = true
+	case 0xB4:
+		inst = c.ldy
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x94:
+		inst = c.sty
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x15:
+		inst = c.ora
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x35:
+		inst = c.and
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x55:
+		inst = c.eor
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x75:
+		inst = c.adc
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0xD5:
+		inst = c.cmp
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0xF5:
+		inst = c.sbc
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0xB5:
+		inst = c.lda
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x95:
+		inst = c.sta
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x56:
+		inst = c.lsr
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+	case 0x16:
+		inst = c.asl
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+	case 0x76:
+		inst = c.ror
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+	case 0x36:
+		inst = c.rol
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+	case 0xF6:
+		inst = c.inc
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+	case 0xD6:
+		inst = c.dec
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+	case 0xB6:
+		inst = c.ldx
+		mode = modeZeroPageY
+		bytes = 2
+		c.cycles += 4
+	case 0x96:
+		inst = c.stx
+		mode = modeZeroPageY
+		bytes = 2
+		c.cycles += 4
+	case 0xBC:
+		inst = c.ldy
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0x1D:
+		inst = c.ora
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0x3D:
+		inst = c.and
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0x5D:
+		inst = c.eor
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0x7D:
+		inst = c.adc
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0xDD:
+		inst = c.cmp
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0xFD:
+		inst = c.sbc
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0xBD:
+		inst = c.lda
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0x9D:
+		inst = c.sta
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 5
+		noPageCrossed = true
+	case 0x5E:
+		inst = c.lsr
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0x1E:
+		inst = c.asl
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0x7E:
+		inst = c.ror
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0x3E:
+		inst = c.rol
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0xFE:
+		inst = c.inc
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0xDE:
+		inst = c.dec
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0xBE:
+		inst = c.ldx
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 4
+	case 0x04:
+		inst = c.nop
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x44:
+		inst = c.nop
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x64:
+		inst = c.nop
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x0C:
+		inst = c.nop
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0x14:
+		inst = c.nop
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x34:
+		inst = c.nop
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x54:
+		inst = c.nop
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x74:
+		inst = c.nop
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0xD4:
+		inst = c.nop
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0xF4:
+		inst = c.nop
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 4
+	case 0x1A:
+		inst = c.nop
+		mode = modeImplied
+		bytes = 1
+		c.cycles += 2
+	case 0x3A:
+		inst = c.nop
+		mode = modeImplied
+		bytes = 1
+		c.cycles += 2
+	case 0x5A:
+		inst = c.nop
+		mode = modeImplied
+		bytes = 1
+		c.cycles += 2
+	case 0x7A:
+		inst = c.nop
+		mode = modeImplied
+		bytes = 1
+		c.cycles += 2
+	case 0xDA:
+		inst = c.nop
+		mode = modeImplied
+		bytes = 1
+		c.cycles += 2
+	case 0xFA:
+		inst = c.nop
+		mode = modeImplied
+		bytes = 1
+		c.cycles += 2
+	case 0x80:
+		inst = c.nop
+		mode = modeImmediate
+		bytes = 2
+		c.cycles += 2
+	case 0x1C:
+		inst = c.nop
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0x3C:
+		inst = c.nop
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0x5C:
+		inst = c.nop
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0x7C:
+		inst = c.nop
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0xDC:
+		inst = c.nop
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0xFC:
+		inst = c.nop
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 4
+	case 0xA3:
+		inst = c.lax
+		mode = modeIndexedIndirect
+		bytes = 2
+		c.cycles += 6
+		noPageCrossed = true
+	case 0xA7:
+		inst = c.lax
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0xAF:
+		inst = c.lax
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0xB3:
+		inst = c.lax
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 5
+	case 0xB7:
+		inst = c.lax
+		mode = modeZeroPageY
+		bytes = 2
+		c.cycles += 4
+	case 0xBF:
+		inst = c.lax
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 4
+	case 0x83:
+		inst = c.sax
+		mode = modeIndexedIndirect
+		bytes = 2
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x87:
+		inst = c.sax
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 3
+	case 0x8F:
+		inst = c.sax
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 4
+	case 0x97:
+		inst = c.sax
+		mode = modeZeroPageY
+		bytes = 2
+		c.cycles += 4
+	case 0xEB:
+		inst = c.sbc
+		mode = modeImmediate
+		bytes = 2
+		c.cycles += 2
+	case 0xC3:
+		inst = c.dcp
+		mode = modeIndexedIndirect
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0xC7:
+		inst = c.dcp
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+		noPageCrossed = true
+	case 0xCF:
+		inst = c.dcp
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0xD3:
+		inst = c.dcp
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0xD7:
+		inst = c.dcp
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+		noPageCrossed = true
+	case 0xDB:
+		inst = c.dcp
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0xDF:
+		inst = c.dcp
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0xE3:
+		inst = c.isc
+		mode = modeIndexedIndirect
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0xE7:
+		inst = c.isc
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+		noPageCrossed = true
+	case 0xEF:
+		inst = c.isc
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0xF3:
+		inst = c.isc
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0xF7:
+		inst = c.isc
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+		noPageCrossed = true
+	case 0xFB:
+		inst = c.isc
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0xFF:
+		inst = c.isc
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0x03:
+		inst = c.slo
+		mode = modeIndexedIndirect
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0x07:
+		inst = c.slo
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+		noPageCrossed = true
+	case 0x0F:
+		inst = c.slo
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x13:
+		inst = c.slo
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0x17:
+		inst = c.slo
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x1B:
+		inst = c.slo
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x1F:
+		inst = c.slo
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0x23:
+		inst = c.rla
+		mode = modeIndexedIndirect
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0x27:
+		inst = c.rla
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+		noPageCrossed = true
+	case 0x2F:
+		inst = c.rla
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x33:
+		inst = c.rla
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0x37:
+		inst = c.rla
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x3B:
+		inst = c.rla
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x3F:
+		inst = c.rla
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0x43:
+		inst = c.sre
+		mode = modeIndexedIndirect
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0x47:
+		inst = c.sre
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+		noPageCrossed = true
+	case 0x4F:
+		inst = c.sre
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x53:
+		inst = c.sre
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0x57:
+		inst = c.sre
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x5B:
+		inst = c.sre
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x5F:
+		inst = c.sre
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 7
+		noPageCrossed = true
+	case 0x63:
+		inst = c.rra
+		mode = modeIndexedIndirect
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0x67:
+		inst = c.rra
+		mode = modeZeroPage
+		bytes = 2
+		c.cycles += 5
+		noPageCrossed = true
+	case 0x6F:
+		inst = c.rra
+		mode = modeAbsolute
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x73:
+		inst = c.rra
+		mode = modeIndirectIndexed
+		bytes = 2
+		c.cycles += 8
+		noPageCrossed = true
+	case 0x77:
+		inst = c.rra
+		mode = modeZeroPageX
+		bytes = 2
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x7B:
+		inst = c.rra
+		mode = modeAbsoluteY
+		bytes = 3
+		c.cycles += 6
+		noPageCrossed = true
+	case 0x7F:
+		inst = c.rra
+		mode = modeAbsoluteX
+		bytes = 3
+		c.cycles += 6
 	default:
 		log.Fatalf("unknown opcode %02X", opcode)
 	}
@@ -452,6 +1314,30 @@ func (c *CPU) Step() int {
 		}
 	case modeIndexedIndirect:
 		address = c.readWordPageWrap(uint16(c.readByte(c.pc+1) + c.x))
+	case modeIndirectIndexed:
+		offset := c.readWordPageWrap(uint16(c.readByte(c.pc + 1)))
+		address = offset + uint16(c.y)
+		if pageCrossed(offset, address) && !noPageCrossed {
+			c.cycles++
+		}
+	case modeIndirect:
+		address = c.readWordPageWrap(c.readWord(c.pc + 1))
+	case modeAbsoluteY:
+		offset := c.readWord(c.pc + 1)
+		address = offset + uint16(c.y)
+		if pageCrossed(offset, address) {
+			c.cycles++
+		}
+	case modeAbsoluteX:
+		offset := c.readWord(c.pc + 1)
+		address = offset + uint16(c.x)
+		if pageCrossed(offset, address) && !noPageCrossed {
+			c.cycles++
+		}
+	case modeZeroPageX:
+		address = uint16(c.readByte(c.pc+1)+c.x) & 0xff
+	case modeZeroPageY:
+		address = uint16(c.readByte(c.pc+1)+c.y) & 0xff
 	}
 	c.pc += bytes
 	inst(address)
@@ -516,6 +1402,10 @@ func (c *CPU) ldx(address uint16) {
 
 func (c *CPU) stx(address uint16) {
 	c.write(address, c.x)
+}
+
+func (c *CPU) sty(address uint16) {
+	c.write(address, c.y)
 }
 
 func (c *CPU) jsr(address uint16) {
@@ -836,6 +1726,20 @@ func (c *CPU) rora(address uint16) {
 	c.setN(c.a)
 }
 
+func (c *CPU) ror(address uint16) {
+	value := c.readByte(address)
+	carry := c.status & 1
+	if value&1 == 1 {
+		c.status = setBits(c.status, cpuFlagC)
+	} else {
+		c.status = resetBits(c.status, cpuFlagC)
+	}
+	value = (value >> 1) | (carry << 7)
+	c.write(address, value)
+	c.setZ(value)
+	c.setN(value)
+}
+
 func (c *CPU) rola(address uint16) {
 	carry := c.status & 1
 	if (c.a>>7)&1 == 1 {
@@ -846,6 +1750,20 @@ func (c *CPU) rola(address uint16) {
 	c.a = (c.a << 1) | carry
 	c.setZ(c.a)
 	c.setN(c.a)
+}
+
+func (c *CPU) rol(address uint16) {
+	value := c.readByte(address)
+	carry := c.status & 1
+	if (value>>7)&1 == 1 {
+		c.status = setBits(c.status, cpuFlagC)
+	} else {
+		c.status = resetBits(c.status, cpuFlagC)
+	}
+	value = (value << 1) | carry
+	c.write(address, value)
+	c.setZ(value)
+	c.setN(value)
 }
 
 func (c *CPU) lsr(address uint16) {
@@ -883,4 +1801,59 @@ func (c *CPU) asl(address uint16) {
 	c.write(address, value)
 	c.setZ(value)
 	c.setN(value)
+}
+
+func (c *CPU) inc(address uint16) {
+	value := c.readByte(address)
+	value++
+	c.setZ(value)
+	c.setN(value)
+	c.write(address, value)
+}
+
+func (c *CPU) dec(address uint16) {
+	value := c.readByte(address)
+	value--
+	c.setZ(value)
+	c.setN(value)
+	c.write(address, value)
+}
+
+func (c *CPU) lax(address uint16) {
+	c.lda(address)
+	c.ldx(address)
+}
+
+func (c *CPU) sax(address uint16) {
+	c.write(address, c.a&c.x)
+}
+
+func (c *CPU) dcp(address uint16) {
+	c.dec(address)
+	c.cmp(address)
+}
+
+func (c *CPU) isc(address uint16) {
+	c.inc(address)
+	c.sbc(address)
+}
+
+func (c *CPU) slo(address uint16) {
+	c.asl(address)
+	c.ora(address)
+}
+
+func (c *CPU) rla(address uint16) {
+	c.rol(address)
+	c.and(address)
+}
+
+func (c *CPU) sre(address uint16) {
+	c.lsr(address)
+	c.eor(address)
+}
+
+func (c *CPU) rra(address uint16) {
+	c.ror(address)
+	c.adc(address)
 }
