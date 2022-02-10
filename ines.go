@@ -2,7 +2,6 @@ package nes
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"os"
 
@@ -57,7 +56,6 @@ func ReadFile(r io.Reader) (*Cart, error) {
 	}
 
 	mirror := header.Flags6 & 1
-	fmt.Printf("mirroging mode: %b\n", mirror)
 
 	return &Cart{
 		Mirror: mirror,

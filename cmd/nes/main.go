@@ -14,14 +14,14 @@ func main() {
 		log.Fatal(err)
 	}
 	cpu := nes.NewCPU(cart)
-	ppu := nes.NewPPU(cart)
+	// ppu := nes.NewPPU(cart)
 	// todo this is a weird cyclical dedendancy
-	cpu.PPU = ppu
+	// cpu.PPU = ppu
 	for {
 		cycles := cpu.Step()
 		cycles *= 3
 		for ; cycles > 0; cycles-- {
-			ppu.Step()
+			// ppu.Step()
 		}
 	}
 }
