@@ -13,10 +13,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cpu := nes.NewCPU(cart)
-	// ppu := nes.NewPPU(cart)
-	// todo this is a weird cyclical dedendancy
-	// cpu.PPU = ppu
+	ppu := nes.NewPPU(cart)
+	cpu := nes.NewCPU(cart, ppu)
 	for {
 		cycles := cpu.Step()
 		cycles *= 3

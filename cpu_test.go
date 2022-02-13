@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -12,7 +13,8 @@ func TestLogFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cpu := NewCPU(cart)
+	ppu := NewPPU(cart)
+	cpu := NewCPU(cart, ppu)
 	// nestest automation mode starts at 0xC000
 	cpu.pc = 0xC000
 
@@ -22,7 +24,13 @@ func TestLogFile(t *testing.T) {
 	}
 	defer logFile.Close()
 	scanner := bufio.NewScanner(logFile)
+
+	// CPU starts at cycle 7 and PPU starts a cycle 21 in the log file
 	totalCycles := 7
+	for i := 0; i < 21; i++ {
+		ppu.Step()
+	}
+
 	for scanner.Scan() {
 		text := scanner.Text()
 		expectedPC := text[0:4]
@@ -66,12 +74,29 @@ func TestLogFile(t *testing.T) {
 			t.Fatalf("sp = %v, want %v", actualSP, expectedSP)
 		}
 
+		expectedScanLine := strings.TrimSpace(text[78:81])
+		actualScanLine := fmt.Sprintf("%d", ppu.scanLine)
+		if expectedScanLine != actualScanLine {
+			t.Fatalf("PPU scanLine = %v, want %v", actualScanLine, expectedScanLine)
+		}
+
+		expectedPPUCycles := strings.TrimSpace(text[82:85])
+		actualPPUCycles := fmt.Sprintf("%d", ppu.cycle)
+		if expectedPPUCycles != actualPPUCycles {
+			t.Fatalf("PPU cycle = %v, want %v", actualPPUCycles, expectedPPUCycles)
+		}
+
 		expectedCycles := text[90:]
 		actualCycles := fmt.Sprintf("%d", totalCycles)
 		if expectedCycles != actualCycles {
 			t.Fatalf("cycles = %v, want %v", actualCycles, expectedCycles)
 		}
 
-		totalCycles += cpu.Step()
+		cycles := cpu.Step()
+		totalCycles += cycles
+		cycles *= 3
+		for i := 0; i < cycles; i++ {
+			ppu.Step()
+		}
 	}
 }

@@ -45,11 +45,13 @@ type CPU struct {
 	ram [2048]byte
 
 	cart *Cart
+	ppu  *PPU
 }
 
-func NewCPU(cart *Cart) *CPU {
+func NewCPU(cart *Cart, ppu *PPU) *CPU {
 	cpu := &CPU{
 		cart: cart,
+		ppu:  ppu,
 	}
 	cpu.reset()
 	return cpu
@@ -67,6 +69,8 @@ func (c *CPU) readByte(address uint16) byte {
 	switch {
 	case address < 0x2000:
 		return c.ram[address%0x800]
+	case address < 0x4000:
+		return c.ppu.readRegister((address - 0x4000) % 8)
 	case address >= 0x6000:
 		return c.cart.ReadByte(address)
 	default:
@@ -97,6 +101,8 @@ func (c *CPU) write(address uint16, value byte) {
 	switch {
 	case address < 0x2000:
 		c.ram[address%0x800] = value
+	case address < 0x4000:
+		c.ppu.writeRegister((address-0x4000)%8, value)
 	case address < 0x4014:
 		// TODO implement APU
 	case address == 0x4015:
