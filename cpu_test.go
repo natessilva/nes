@@ -3,6 +3,7 @@ package nes
 import (
 	"bufio"
 	"fmt"
+	"image"
 	"os"
 	"strings"
 	"testing"
@@ -13,7 +14,7 @@ func TestLogFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ppu := NewPPU(cart)
+	ppu := NewPPU(cart, image.NewRGBA(image.Rect(0, 0, 256, 240)))
 	cpu := NewCPU(cart, ppu)
 	// nestest automation mode starts at 0xC000
 	cpu.pc = 0xC000
@@ -75,7 +76,7 @@ func TestLogFile(t *testing.T) {
 		}
 
 		expectedScanLine := strings.TrimSpace(text[78:81])
-		actualScanLine := fmt.Sprintf("%d", ppu.scanLine)
+		actualScanLine := fmt.Sprintf("%d", ppu.scanline)
 		if expectedScanLine != actualScanLine {
 			t.Fatalf("PPU scanLine = %v, want %v", actualScanLine, expectedScanLine)
 		}

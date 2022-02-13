@@ -6,18 +6,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Wasm</title>
     <style>
-      canvas {
-        width: 256px;
-        height: 240px;
+      .container {
+        width: 90%;
+        margin: auto;
         image-rendering: crisp-edges;
+      }
+
+      canvas {
+        width: 100%;
       }
     </style>
     <script src="wasm_exec.js"></script>
   </head>
 
   <body>
-    <canvas id="canvas" width="256" height="240"></canvas>
-    <input type="file" id="file" />
+    <div>
+      <input type="file" id="file" />
+    </div>
+    <div class="container">
+      <canvas id="canvas" width="256" height="240"></canvas>
+    </div>
     <script>
       const go = new Go();
       WebAssembly.instantiateStreaming(fetch("nes.wasm"), go.importObject).then(

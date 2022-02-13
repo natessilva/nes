@@ -46,6 +46,8 @@ type CPU struct {
 
 	cart *Cart
 	ppu  *PPU
+
+	nmiTriggered bool
 }
 
 func NewCPU(cart *Cart, ppu *PPU) *CPU {
@@ -64,6 +66,19 @@ func (c *CPU) reset() {
 	c.status = 0x24
 }
 
+func (c *CPU) nmi() int {
+	c.pushWord(c.pc)
+	c.php(0)
+	c.pc = c.readWord(0xFFFA)
+	c.status = setBits(c.status, cpuFlagI)
+	c.nmiTriggered = false
+	return 7
+}
+
+func (c *CPU) TriggerNMI() {
+	c.nmiTriggered = true
+}
+
 // readByte reads a byte from the memory map
 func (c *CPU) readByte(address uint16) byte {
 	switch {
@@ -71,6 +86,8 @@ func (c *CPU) readByte(address uint16) byte {
 		return c.ram[address%0x800]
 	case address < 0x4000:
 		return c.ppu.readRegister((address - 0x4000) % 8)
+	case address < 0x4020:
+		// todo APU
 	case address >= 0x6000:
 		return c.cart.ReadByte(address)
 	default:
@@ -103,9 +120,7 @@ func (c *CPU) write(address uint16, value byte) {
 		c.ram[address%0x800] = value
 	case address < 0x4000:
 		c.ppu.writeRegister((address-0x4000)%8, value)
-	case address < 0x4014:
-		// TODO implement APU
-	case address == 0x4015:
+	case address < 0x4020:
 		// TODO implement APU
 	default:
 		log.Fatalf("invalid write address %04X", address)
@@ -115,6 +130,9 @@ func (c *CPU) write(address uint16, value byte) {
 // Step steps the CPU forward one instruction returning
 // the number of cyles it took.
 func (c *CPU) Step() int {
+	if c.nmiTriggered {
+		return c.nmi()
+	}
 	opcode := c.readByte(c.pc)
 	var inst func(address uint16)
 	var mode int
