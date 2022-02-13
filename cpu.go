@@ -48,12 +48,16 @@ type cpu struct {
 	ppu  *ppu
 
 	nmiTriggered bool
+
+	// joypads
+	joypad1 *joypad
 }
 
-func newCPU(cart *cartridge, ppu *ppu) *cpu {
+func newCPU(cart *cartridge, ppu *ppu, j1 *joypad) *cpu {
 	cpu := &cpu{
-		cart: cart,
-		ppu:  ppu,
+		cart:    cart,
+		ppu:     ppu,
+		joypad1: j1,
 	}
 	cpu.reset()
 	return cpu
@@ -86,6 +90,9 @@ func (c *cpu) readByte(address uint16) byte {
 		return c.ram[address%0x800]
 	case address < 0x4000:
 		return c.ppu.readRegister((address - 0x4000) % 8)
+	case address == 0x4016:
+		// joypad 1
+		return c.joypad1.read()
 	case address < 0x4020:
 		// todo APU
 	case address >= 0x6000:
@@ -120,6 +127,8 @@ func (c *cpu) write(address uint16, value byte) {
 		c.ram[address%0x800] = value
 	case address < 0x4000:
 		c.ppu.writeRegister((address-0x4000)%8, value)
+	case address == 0x4016:
+		c.joypad1.write(value)
 	case address < 0x4020:
 		// TODO implement APU
 	default:

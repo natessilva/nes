@@ -19,7 +19,7 @@ func TestLogFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	ppu := newPPU(cart)
-	cpu := newCPU(cart, ppu)
+	cpu := newCPU(cart, ppu, &joypad{})
 	// nestest automation mode starts at 0xC000
 	cpu.pc = 0xC000
 

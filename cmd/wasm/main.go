@@ -47,7 +47,59 @@ func main() {
 		ctx.Call("putImageData", imgData, 0, 0)
 		return nil
 	}
-
 	js.Global().Set("render", js.FuncOf(render))
+
+	keydown := func(this js.Value, inputs []js.Value) interface{} {
+		if console == nil {
+			return nil
+		}
+		switch inputs[0].String() {
+		case "Enter":
+			console.SetJoypad(nes.ButtonStart, true)
+		case "f":
+			console.SetJoypad(nes.ButtonA, true)
+		case "d":
+			console.SetJoypad(nes.ButtonB, true)
+		case " ":
+			console.SetJoypad(nes.ButtonSelect, true)
+		case "ArrowUp":
+			console.SetJoypad(nes.ButtonUp, true)
+		case "ArrowDown":
+			console.SetJoypad(nes.ButtonDown, true)
+		case "ArrowLeft":
+			console.SetJoypad(nes.ButtonLeft, true)
+		case "ArrowRight":
+			console.SetJoypad(nes.ButtonRight, true)
+		}
+		return nil
+	}
+	js.Global().Set("keydown", js.FuncOf(keydown))
+
+	keyup := func(this js.Value, inputs []js.Value) interface{} {
+		if console == nil {
+			return nil
+		}
+		switch inputs[0].String() {
+		case "Enter":
+			console.SetJoypad(nes.ButtonStart, false)
+		case "f":
+			console.SetJoypad(nes.ButtonA, false)
+		case "d":
+			console.SetJoypad(nes.ButtonB, false)
+		case " ":
+			console.SetJoypad(nes.ButtonSelect, false)
+		case "ArrowUp":
+			console.SetJoypad(nes.ButtonUp, false)
+		case "ArrowDown":
+			console.SetJoypad(nes.ButtonDown, false)
+		case "ArrowLeft":
+			console.SetJoypad(nes.ButtonLeft, false)
+		case "ArrowRight":
+			console.SetJoypad(nes.ButtonRight, false)
+		}
+		return nil
+	}
+	js.Global().Set("keyup", js.FuncOf(keyup))
+
 	<-c
 }

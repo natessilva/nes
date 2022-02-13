@@ -6,8 +6,9 @@ import (
 )
 
 type Console struct {
-	ppu *ppu
-	cpu *cpu
+	ppu     *ppu
+	cpu     *cpu
+	joypad1 *joypad
 }
 
 func NewConsole() *Console {
@@ -20,7 +21,8 @@ func (n *Console) LoadROM(r io.Reader) error {
 		return err
 	}
 	n.ppu = newPPU(cart)
-	n.cpu = newCPU(cart, n.ppu)
+	n.joypad1 = &joypad{}
+	n.cpu = newCPU(cart, n.ppu, n.joypad1)
 	return nil
 }
 
@@ -38,5 +40,13 @@ func (n *Console) RenderFrame(image *image.RGBA) {
 			n.cpu.TriggerNMI()
 			break
 		}
+	}
+}
+
+func (n *Console) SetJoypad(button byte, pressed bool) {
+	if pressed {
+		n.joypad1.buttonState = setBits(n.joypad1.buttonState, button)
+	} else {
+		n.joypad1.buttonState = resetBits(n.joypad1.buttonState, button)
 	}
 }

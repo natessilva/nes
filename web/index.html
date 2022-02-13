@@ -50,6 +50,24 @@
         false
       );
 
+      document.addEventListener("keydown", (event) => {
+        if (keydown) {
+          console.log(JSON.stringify(event.key));
+          keydown(event.key);
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      });
+
+      document.addEventListener("keyup", (event) => {
+        if (keyup) {
+          console.log(JSON.stringify(event.key));
+          keyup(event.key);
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      });
+
       function renderOuter(ts) {
         render();
         requestAnimationFrame(renderOuter);
