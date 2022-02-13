@@ -3,19 +3,23 @@ package nes
 import (
 	"bufio"
 	"fmt"
-	"image"
 	"os"
 	"strings"
 	"testing"
 )
 
 func TestLogFile(t *testing.T) {
-	cart, err := LoadFile("./nestest.nes")
+	file, err := os.Open("./nestest.nes")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ppu := NewPPU(cart, image.NewRGBA(image.Rect(0, 0, 256, 240)))
-	cpu := NewCPU(cart, ppu)
+	defer file.Close()
+	cart, err := readFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ppu := newPPU(cart)
+	cpu := newCPU(cart, ppu)
 	// nestest automation mode starts at 0xC000
 	cpu.pc = 0xC000
 

@@ -2,25 +2,20 @@ package nes
 
 import "log"
 
-const (
-	H_MIRROR = iota
-	V_MIRROR
-)
-
-type Cart struct {
-	Mirror byte
-	PRG    []byte
-	CHR    []byte
+type cartridge struct {
+	mirror byte
+	prg    []byte
+	chr    []byte
 }
 
-func (c *Cart) ReadByte(address uint16) byte {
+func (c *cartridge) readByte(address uint16) byte {
 	switch {
 	case address >= 0xC000:
-		index := int(address-0xC000) % len(c.PRG)
-		return c.PRG[index]
+		index := int(address-0xC000) % len(c.prg)
+		return c.prg[index]
 	case address >= 0x8000:
-		index := int(address-0x8000) % len(c.PRG)
-		return c.PRG[index]
+		index := int(address-0x8000) % len(c.prg)
+		return c.prg[index]
 	default:
 		log.Fatalf("invalid address %04x\n", address)
 	}

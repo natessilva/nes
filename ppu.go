@@ -33,8 +33,8 @@ const (
 	maskB
 )
 
-type PPU struct {
-	cart *Cart
+type ppu struct {
+	cart *cartridge
 
 	// 2 screens worth of ram
 	vram [2048]byte
@@ -59,19 +59,15 @@ type PPU struct {
 	latch  byte
 	addr   uint16
 	w      bool
-
-	// render frame
-	image *image.RGBA
 }
 
-func NewPPU(cart *Cart, image *image.RGBA) *PPU {
-	return &PPU{
-		cart:  cart,
-		image: image,
+func newPPU(cart *cartridge) *ppu {
+	return &ppu{
+		cart: cart,
 	}
 }
 
-func (p *PPU) readRegister(address uint16) byte {
+func (p *ppu) readRegister(address uint16) byte {
 	switch address {
 	case 2:
 		// STATUS 3 bits plus the remain bits filled by the latch
@@ -85,7 +81,7 @@ func (p *PPU) readRegister(address uint16) byte {
 	return 0
 }
 
-func (p *PPU) writeRegister(address uint16, value byte) {
+func (p *ppu) writeRegister(address uint16, value byte) {
 	// the latch is always written to for every write
 	p.latch = value
 	switch address {
@@ -115,7 +111,7 @@ func (p *PPU) writeRegister(address uint16, value byte) {
 	}
 }
 
-func (p *PPU) write(address uint16, value byte) {
+func (p *ppu) write(address uint16, value byte) {
 	switch {
 	case address < 0x3000:
 		p.vram[mirror(address)] = value
@@ -142,10 +138,9 @@ func mirror(address uint16) uint16 {
 	return table*0x400 + location
 }
 
-func (p *PPU) Step() {
+func (p *ppu) Step() {
 	p.cycle++
 
-	// TODO implement rendering
 	renderingEnabled := isAnySet(p.mask, maskBG|maskSP)
 
 	// On odd rendered frames there is one less tick
@@ -167,10 +162,6 @@ func (p *PPU) Step() {
 	// vblank
 	if p.cycle == 1 && p.scanline == 241 {
 		p.status = setBits(p.status, statusV)
-
-		if p.NMITriggered() && renderingEnabled {
-			p.render()
-		}
 	}
 
 	if p.scanline == 261 && p.cycle == 1 {
@@ -178,16 +169,19 @@ func (p *PPU) Step() {
 	}
 }
 
-func (p *PPU) NMITriggered() bool {
+func (p *ppu) NMITriggered() bool {
 	return isAnySet(p.status, statusV) && isAnySet(p.ctrl, ctrlV)
 }
 
-func (p *PPU) render() {
+func (p *ppu) render(image *image.RGBA) {
+	if !isAnySet(p.mask, maskBG|maskSP) {
+		return
+	}
 	for tile := 0; tile < 960; tile++ {
 		tileAddress := uint16(p.vram[tile]) * 16
 		tileY := tile / 32
 		tileX := tile % 32
-		tileBytes := p.cart.CHR[tileAddress : tileAddress+16]
+		tileBytes := p.cart.chr[tileAddress : tileAddress+16]
 
 		colors := []color.RGBA{
 			{0, 0, 0, 255},
@@ -204,7 +198,7 @@ func (p *PPU) render() {
 				value := (hi&1)<<1 | (lo & 1)
 				hi >>= 1
 				lo >>= 1
-				p.image.Set(tileX*8+x, tileY*8+y, colors[value])
+				image.Set(tileX*8+x, tileY*8+y, colors[value])
 
 			}
 		}

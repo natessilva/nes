@@ -3,7 +3,6 @@ package nes
 import (
 	"encoding/binary"
 	"io"
-	"os"
 
 	"github.com/pkg/errors"
 )
@@ -22,17 +21,7 @@ type iNESHeader struct {
 // Every .nes file starts with ASCII NES followed by $1A
 const magicNumber = 0x1a53454e
 
-// Load a file, read the header and PRG-ROM and CHR-ROM
-func LoadFile(path string) (*Cart, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, errors.Wrap(err, "couldn't open")
-	}
-	defer file.Close()
-	return ReadFile(file)
-}
-
-func ReadFile(r io.Reader) (*Cart, error) {
+func readFile(r io.Reader) (*cartridge, error) {
 	header := iNESHeader{}
 	err := binary.Read(r, binary.LittleEndian, &header)
 	if err != nil {
@@ -57,9 +46,9 @@ func ReadFile(r io.Reader) (*Cart, error) {
 
 	mirror := header.Flags6 & 1
 
-	return &Cart{
-		Mirror: mirror,
-		PRG:    prg,
-		CHR:    chr,
+	return &cartridge{
+		mirror: mirror,
+		prg:    prg,
+		chr:    chr,
 	}, nil
 }

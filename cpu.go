@@ -31,7 +31,7 @@ const (
 	modeZeroPageY
 )
 
-type CPU struct {
+type cpu struct {
 	cycles uint64 // total cycle counter
 	pc     uint16 // 16 bit program counter
 	sp     byte   // 8 bit stack pointer
@@ -44,14 +44,14 @@ type CPU struct {
 
 	ram [2048]byte
 
-	cart *Cart
-	ppu  *PPU
+	cart *cartridge
+	ppu  *ppu
 
 	nmiTriggered bool
 }
 
-func NewCPU(cart *Cart, ppu *PPU) *CPU {
-	cpu := &CPU{
+func newCPU(cart *cartridge, ppu *ppu) *cpu {
+	cpu := &cpu{
 		cart: cart,
 		ppu:  ppu,
 	}
@@ -59,14 +59,14 @@ func NewCPU(cart *Cart, ppu *PPU) *CPU {
 	return cpu
 }
 
-func (c *CPU) reset() {
+func (c *cpu) reset() {
 	// Program counter always starts at 0xFFFC
 	c.pc = c.readWord(0xFFFC)
 	c.sp = 0xFD
 	c.status = 0x24
 }
 
-func (c *CPU) nmi() int {
+func (c *cpu) nmi() int {
 	c.pushWord(c.pc)
 	c.php(0)
 	c.pc = c.readWord(0xFFFA)
@@ -75,12 +75,12 @@ func (c *CPU) nmi() int {
 	return 7
 }
 
-func (c *CPU) TriggerNMI() {
+func (c *cpu) TriggerNMI() {
 	c.nmiTriggered = true
 }
 
 // readByte reads a byte from the memory map
-func (c *CPU) readByte(address uint16) byte {
+func (c *cpu) readByte(address uint16) byte {
 	switch {
 	case address < 0x2000:
 		return c.ram[address%0x800]
@@ -89,7 +89,7 @@ func (c *CPU) readByte(address uint16) byte {
 	case address < 0x4020:
 		// todo APU
 	case address >= 0x6000:
-		return c.cart.ReadByte(address)
+		return c.cart.readByte(address)
 	default:
 		log.Fatalf("invalid read address %02X", address)
 	}
@@ -98,7 +98,7 @@ func (c *CPU) readByte(address uint16) byte {
 
 // readWord reads a 16 bit word from the memory map
 // low byte first.
-func (c *CPU) readWord(address uint16) uint16 {
+func (c *cpu) readWord(address uint16) uint16 {
 	low := uint16(c.readByte(address))
 	high := uint16(c.readByte(address + 1))
 	return (high << 8) | low
@@ -107,14 +107,14 @@ func (c *CPU) readWord(address uint16) uint16 {
 // reads a word by in the same page
 // if the high byte would be on another page
 // wrap aroudn to the beginning of the page
-func (c *CPU) readWordPageWrap(address uint16) uint16 {
+func (c *cpu) readWordPageWrap(address uint16) uint16 {
 	low := uint16(c.readByte(address))
 	highAddress := (address & 0xFF00) | uint16(byte(address+1))
 	high := uint16(c.readByte(highAddress))
 	return (high << 8) | low
 }
 
-func (c *CPU) write(address uint16, value byte) {
+func (c *cpu) write(address uint16, value byte) {
 	switch {
 	case address < 0x2000:
 		c.ram[address%0x800] = value
@@ -129,7 +129,7 @@ func (c *CPU) write(address uint16, value byte) {
 
 // Step steps the CPU forward one instruction returning
 // the number of cyles it took.
-func (c *CPU) Step() int {
+func (c *cpu) Step() int {
 	if c.nmiTriggered {
 		return c.nmi()
 	}
@@ -1375,7 +1375,7 @@ func pageCrossed(a, b uint16) bool {
 	return a>>8 != b>>8
 }
 
-func (c *CPU) setZ(value byte) {
+func (c *cpu) setZ(value byte) {
 	if value == 0 {
 		c.status = setBits(c.status, cpuFlagZ)
 	} else {
@@ -1383,7 +1383,7 @@ func (c *CPU) setZ(value byte) {
 	}
 }
 
-func (c *CPU) setN(value byte) {
+func (c *cpu) setN(value byte) {
 	if value >= 0x80 {
 		c.status = setBits(c.status, cpuFlagN)
 	} else {
@@ -1391,60 +1391,60 @@ func (c *CPU) setN(value byte) {
 	}
 }
 
-func (c *CPU) push(value byte) {
+func (c *cpu) push(value byte) {
 	c.write(0x100|uint16(c.sp), value)
 	c.sp--
 }
 
-func (c *CPU) pushWord(value uint16) {
+func (c *cpu) pushWord(value uint16) {
 	high := byte(value >> 8)
 	low := byte(value & 0xFF)
 	c.push(high)
 	c.push(low)
 }
 
-func (c *CPU) pull() byte {
+func (c *cpu) pull() byte {
 	c.sp++
 	return c.readByte(0x100 | uint16(c.sp))
 }
 
-func (c *CPU) pullWord() uint16 {
+func (c *cpu) pullWord() uint16 {
 	low := uint16(c.pull())
 	high := uint16(c.pull())
 	return high<<8 | low
 }
 
-func (c *CPU) jmp(address uint16) {
+func (c *cpu) jmp(address uint16) {
 	c.pc = address
 }
 
-func (c *CPU) ldx(address uint16) {
+func (c *cpu) ldx(address uint16) {
 	c.x = c.readByte(address)
 	c.setZ(c.x)
 	c.setN(c.x)
 }
 
-func (c *CPU) stx(address uint16) {
+func (c *cpu) stx(address uint16) {
 	c.write(address, c.x)
 }
 
-func (c *CPU) sty(address uint16) {
+func (c *cpu) sty(address uint16) {
 	c.write(address, c.y)
 }
 
-func (c *CPU) jsr(address uint16) {
+func (c *cpu) jsr(address uint16) {
 	c.pushWord(c.pc - 1)
 	c.pc = address
 }
 
-func (c *CPU) nop(address uint16) {
+func (c *cpu) nop(address uint16) {
 }
 
-func (c *CPU) sec(address uint16) {
+func (c *cpu) sec(address uint16) {
 	c.status = setBits(c.status, cpuFlagC)
 }
 
-func (c *CPU) addBranchCycles(address uint16) {
+func (c *cpu) addBranchCycles(address uint16) {
 	crossed := pageCrossed(c.pc, address)
 	c.cycles++
 	if crossed {
@@ -1452,83 +1452,83 @@ func (c *CPU) addBranchCycles(address uint16) {
 	}
 }
 
-func (c *CPU) bcs(address uint16) {
+func (c *cpu) bcs(address uint16) {
 	if isAnySet(c.status, cpuFlagC) {
 		c.addBranchCycles(address)
 		c.pc = address
 	}
 }
 
-func (c *CPU) bcc(address uint16) {
+func (c *cpu) bcc(address uint16) {
 	if !isAnySet(c.status, cpuFlagC) {
 		c.addBranchCycles(address)
 		c.pc = address
 	}
 }
 
-func (c *CPU) beq(address uint16) {
+func (c *cpu) beq(address uint16) {
 	if isAnySet(c.status, cpuFlagZ) {
 		c.addBranchCycles(address)
 		c.pc = address
 	}
 }
 
-func (c *CPU) bne(address uint16) {
+func (c *cpu) bne(address uint16) {
 	if !isAnySet(c.status, cpuFlagZ) {
 		c.addBranchCycles(address)
 		c.pc = address
 	}
 }
 
-func (c *CPU) bvs(address uint16) {
+func (c *cpu) bvs(address uint16) {
 	if isAnySet(c.status, cpuFlagV) {
 		c.addBranchCycles(address)
 		c.pc = address
 	}
 }
 
-func (c *CPU) bvc(address uint16) {
+func (c *cpu) bvc(address uint16) {
 	if !isAnySet(c.status, cpuFlagV) {
 		c.addBranchCycles(address)
 		c.pc = address
 	}
 }
 
-func (c *CPU) bpl(address uint16) {
+func (c *cpu) bpl(address uint16) {
 	if !isAnySet(c.status, cpuFlagN) {
 		c.addBranchCycles(address)
 		c.pc = address
 	}
 }
 
-func (c *CPU) bmi(address uint16) {
+func (c *cpu) bmi(address uint16) {
 	if isAnySet(c.status, cpuFlagN) {
 		c.addBranchCycles(address)
 		c.pc = address
 	}
 }
 
-func (c *CPU) clc(address uint16) {
+func (c *cpu) clc(address uint16) {
 	c.status = resetBits(c.status, cpuFlagC)
 }
 
-func (c *CPU) lda(address uint16) {
+func (c *cpu) lda(address uint16) {
 	c.a = c.readByte(address)
 	c.setZ(c.a)
 	c.setN(c.a)
 }
 
-func (c *CPU) ldy(address uint16) {
+func (c *cpu) ldy(address uint16) {
 	c.y = c.readByte(address)
 	c.setZ(c.y)
 	c.setN(c.y)
 }
 
-func (c *CPU) sta(address uint16) {
+func (c *cpu) sta(address uint16) {
 	c.write(address, c.a)
 }
 
-func (c *CPU) bit(address uint16) {
+func (c *cpu) bit(address uint16) {
 	value := c.readByte(address)
 	if (value>>6)&1 == 1 {
 		c.status = setBits(c.status, cpuFlagV)
@@ -1539,49 +1539,49 @@ func (c *CPU) bit(address uint16) {
 	c.setN(value)
 }
 
-func (c *CPU) rts(address uint16) {
+func (c *cpu) rts(address uint16) {
 	c.pc = c.pullWord() + 1
 }
 
-func (c *CPU) sei(address uint16) {
+func (c *cpu) sei(address uint16) {
 	c.status = setBits(c.status, cpuFlagI)
 }
 
-func (c *CPU) sed(address uint16) {
+func (c *cpu) sed(address uint16) {
 	c.status = setBits(c.status, cpuFlagD)
 }
 
-func (c *CPU) cld(address uint16) {
+func (c *cpu) cld(address uint16) {
 	c.status = resetBits(c.status, cpuFlagD)
 }
 
-func (c *CPU) php(address uint16) {
+func (c *cpu) php(address uint16) {
 	// bit 5 is always set on push
 	c.push(c.status | 0x10)
 }
 
-func (c *CPU) pha(address uint16) {
+func (c *cpu) pha(address uint16) {
 	c.push(c.a)
 }
 
-func (c *CPU) pla(address uint16) {
+func (c *cpu) pla(address uint16) {
 	c.a = c.pull()
 	c.setZ(c.a)
 	c.setN(c.a)
 }
 
-func (c *CPU) plp(address uint16) {
+func (c *cpu) plp(address uint16) {
 	// ignore bit 5
 	c.status = c.pull()&0xEF | 0x20
 }
 
-func (c *CPU) and(address uint16) {
+func (c *cpu) and(address uint16) {
 	c.a &= c.readByte(address)
 	c.setZ(c.a)
 	c.setN(c.a)
 }
 
-func (c *CPU) compare(a, b byte) {
+func (c *cpu) compare(a, b byte) {
 	c.setZ(a - b)
 	c.setN(a - b)
 	if a >= b {
@@ -1592,35 +1592,35 @@ func (c *CPU) compare(a, b byte) {
 
 }
 
-func (c *CPU) cmp(address uint16) {
+func (c *cpu) cmp(address uint16) {
 	c.compare(c.a, c.readByte(address))
 }
 
-func (c *CPU) cpy(address uint16) {
+func (c *cpu) cpy(address uint16) {
 	c.compare(c.y, c.readByte(address))
 }
 
-func (c *CPU) cpx(address uint16) {
+func (c *cpu) cpx(address uint16) {
 	c.compare(c.x, c.readByte(address))
 }
 
-func (c *CPU) ora(address uint16) {
+func (c *cpu) ora(address uint16) {
 	c.a |= c.readByte(address)
 	c.setZ(c.a)
 	c.setN(c.a)
 }
 
-func (c *CPU) clv(address uint16) {
+func (c *cpu) clv(address uint16) {
 	c.status = resetBits(c.status, cpuFlagV)
 }
 
-func (c *CPU) eor(address uint16) {
+func (c *cpu) eor(address uint16) {
 	c.a ^= c.readByte(address)
 	c.setZ(c.a)
 	c.setN(c.a)
 }
 
-func (c *CPU) adc(address uint16) {
+func (c *cpu) adc(address uint16) {
 	a := c.a
 	b := c.readByte(address)
 	carry := c.status & 1
@@ -1644,7 +1644,7 @@ func (c *CPU) adc(address uint16) {
 	}
 }
 
-func (c *CPU) sbc(address uint16) {
+func (c *cpu) sbc(address uint16) {
 	a := c.a
 	b := c.readByte(address)
 	carry := c.status & 1
@@ -1664,70 +1664,70 @@ func (c *CPU) sbc(address uint16) {
 	}
 }
 
-func (c *CPU) iny(address uint16) {
+func (c *cpu) iny(address uint16) {
 	c.y++
 	c.setZ(c.y)
 	c.setN(c.y)
 }
 
-func (c *CPU) inx(address uint16) {
+func (c *cpu) inx(address uint16) {
 	c.x++
 	c.setZ(c.x)
 	c.setN(c.x)
 }
 
-func (c *CPU) dey(address uint16) {
+func (c *cpu) dey(address uint16) {
 	c.y--
 	c.setZ(c.y)
 	c.setN(c.y)
 }
 
-func (c *CPU) dex(address uint16) {
+func (c *cpu) dex(address uint16) {
 	c.x--
 	c.setZ(c.x)
 	c.setN(c.x)
 }
 
-func (c *CPU) tay(address uint16) {
+func (c *cpu) tay(address uint16) {
 	c.y = c.a
 	c.setZ(c.y)
 	c.setN(c.y)
 }
 
-func (c *CPU) tax(address uint16) {
+func (c *cpu) tax(address uint16) {
 	c.x = c.a
 	c.setZ(c.x)
 	c.setN(c.x)
 }
 
-func (c *CPU) tya(address uint16) {
+func (c *cpu) tya(address uint16) {
 	c.a = c.y
 	c.setZ(c.a)
 	c.setN(c.a)
 }
 
-func (c *CPU) txa(address uint16) {
+func (c *cpu) txa(address uint16) {
 	c.a = c.x
 	c.setZ(c.a)
 	c.setN(c.a)
 }
 
-func (c *CPU) tsx(address uint16) {
+func (c *cpu) tsx(address uint16) {
 	c.x = c.sp
 	c.setZ(c.x)
 	c.setN(c.x)
 }
 
-func (c *CPU) txs(address uint16) {
+func (c *cpu) txs(address uint16) {
 	c.sp = c.x
 }
 
-func (c *CPU) rti(address uint16) {
+func (c *cpu) rti(address uint16) {
 	c.status = c.pull()&0xEF | 0x20
 	c.pc = c.pullWord()
 }
 
-func (c *CPU) lsra(address uint16) {
+func (c *cpu) lsra(address uint16) {
 	if c.a&1 == 1 {
 		c.status = setBits(c.status, cpuFlagC)
 	} else {
@@ -1738,7 +1738,7 @@ func (c *CPU) lsra(address uint16) {
 	c.setN(c.a)
 }
 
-func (c *CPU) rora(address uint16) {
+func (c *cpu) rora(address uint16) {
 	carry := c.status & 1
 	if c.a&1 == 1 {
 		c.status = setBits(c.status, cpuFlagC)
@@ -1750,7 +1750,7 @@ func (c *CPU) rora(address uint16) {
 	c.setN(c.a)
 }
 
-func (c *CPU) ror(address uint16) {
+func (c *cpu) ror(address uint16) {
 	value := c.readByte(address)
 	carry := c.status & 1
 	if value&1 == 1 {
@@ -1764,7 +1764,7 @@ func (c *CPU) ror(address uint16) {
 	c.setN(value)
 }
 
-func (c *CPU) rola(address uint16) {
+func (c *cpu) rola(address uint16) {
 	carry := c.status & 1
 	if (c.a>>7)&1 == 1 {
 		c.status = setBits(c.status, cpuFlagC)
@@ -1776,7 +1776,7 @@ func (c *CPU) rola(address uint16) {
 	c.setN(c.a)
 }
 
-func (c *CPU) rol(address uint16) {
+func (c *cpu) rol(address uint16) {
 	value := c.readByte(address)
 	carry := c.status & 1
 	if (value>>7)&1 == 1 {
@@ -1790,7 +1790,7 @@ func (c *CPU) rol(address uint16) {
 	c.setN(value)
 }
 
-func (c *CPU) lsr(address uint16) {
+func (c *cpu) lsr(address uint16) {
 	value := c.readByte(address)
 	if value&1 == 1 {
 		c.status = setBits(c.status, cpuFlagC)
@@ -1803,7 +1803,7 @@ func (c *CPU) lsr(address uint16) {
 	c.setN(value)
 }
 
-func (c *CPU) asla(address uint16) {
+func (c *cpu) asla(address uint16) {
 	if (c.a>>7)&1 == 1 {
 		c.status = setBits(c.status, cpuFlagC)
 	} else {
@@ -1814,7 +1814,7 @@ func (c *CPU) asla(address uint16) {
 	c.setN(c.a)
 }
 
-func (c *CPU) asl(address uint16) {
+func (c *cpu) asl(address uint16) {
 	value := c.readByte(address)
 	if (value>>7)&1 == 1 {
 		c.status = setBits(c.status, cpuFlagC)
@@ -1827,7 +1827,7 @@ func (c *CPU) asl(address uint16) {
 	c.setN(value)
 }
 
-func (c *CPU) inc(address uint16) {
+func (c *cpu) inc(address uint16) {
 	value := c.readByte(address)
 	value++
 	c.setZ(value)
@@ -1835,7 +1835,7 @@ func (c *CPU) inc(address uint16) {
 	c.write(address, value)
 }
 
-func (c *CPU) dec(address uint16) {
+func (c *cpu) dec(address uint16) {
 	value := c.readByte(address)
 	value--
 	c.setZ(value)
@@ -1843,41 +1843,41 @@ func (c *CPU) dec(address uint16) {
 	c.write(address, value)
 }
 
-func (c *CPU) lax(address uint16) {
+func (c *cpu) lax(address uint16) {
 	c.lda(address)
 	c.ldx(address)
 }
 
-func (c *CPU) sax(address uint16) {
+func (c *cpu) sax(address uint16) {
 	c.write(address, c.a&c.x)
 }
 
-func (c *CPU) dcp(address uint16) {
+func (c *cpu) dcp(address uint16) {
 	c.dec(address)
 	c.cmp(address)
 }
 
-func (c *CPU) isc(address uint16) {
+func (c *cpu) isc(address uint16) {
 	c.inc(address)
 	c.sbc(address)
 }
 
-func (c *CPU) slo(address uint16) {
+func (c *cpu) slo(address uint16) {
 	c.asl(address)
 	c.ora(address)
 }
 
-func (c *CPU) rla(address uint16) {
+func (c *cpu) rla(address uint16) {
 	c.rol(address)
 	c.and(address)
 }
 
-func (c *CPU) sre(address uint16) {
+func (c *cpu) sre(address uint16) {
 	c.lsr(address)
 	c.eor(address)
 }
 
-func (c *CPU) rra(address uint16) {
+func (c *cpu) rra(address uint16) {
 	c.ror(address)
 	c.adc(address)
 }
