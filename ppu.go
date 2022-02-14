@@ -45,6 +45,7 @@ type ppu struct {
 	paletteTable [32]byte
 
 	// 64 sprites 4 bytes each
+	oamAddr byte
 	oamData [256]byte
 
 	// render timing
@@ -59,6 +60,9 @@ type ppu struct {
 	latch  byte
 	addr   uint16
 	w      bool
+
+	// data reads are buffered
+	readBuffer byte
 }
 
 func newPPU(cart *cartridge) *ppu {
@@ -75,6 +79,25 @@ func (p *ppu) readRegister(address uint16) byte {
 		p.status = resetBits(p.status, statusV)
 		p.w = false
 		return value
+	case 7:
+		buff := p.readBuffer
+		value := p.readByte(p.addr)
+		// 0-3EFF is buffered
+		if p.addr < 0x3F00 {
+			p.readBuffer = value
+			value = buff
+		} else {
+			// Reading the palettes still updates the internal buffer though,
+			//but the data placed in it is the mirrored nametable data that
+			// would appear "underneath" the palette.
+			p.readBuffer = p.readByte(p.addr - 0x1000)
+		}
+		if !isAnySet(p.ctrl, ctrlI) {
+			p.addr += 1
+		} else {
+			p.addr += 32
+		}
+		return buff
 	default:
 		log.Fatalf("invalid register read address %d", address)
 	}
@@ -89,6 +112,8 @@ func (p *ppu) writeRegister(address uint16, value byte) {
 		p.ctrl = value
 	case 1:
 		p.mask = value
+	case 3:
+		p.oamAddr = value
 	case 5:
 		// TODO implement scroll
 	case 6:
@@ -111,9 +136,23 @@ func (p *ppu) writeRegister(address uint16, value byte) {
 	}
 }
 
+func (p *ppu) readByte(address uint16) byte {
+	switch {
+	case address < 0x2000:
+		return p.cart.readByte(address)
+	case address < 0x3F00:
+		return p.vram[mirror(address)]
+	case address < 0x4000:
+		return p.paletteTable[address%32]
+	default:
+		log.Fatalf("invalid ppu read address %04X\n", address)
+	}
+	return 0
+}
+
 func (p *ppu) write(address uint16, value byte) {
 	switch {
-	case address < 0x3000:
+	case address < 0x3F00:
 		p.vram[mirror(address)] = value
 	case address < 0x4000:
 		p.paletteTable[address%32] = value
