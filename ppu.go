@@ -97,7 +97,7 @@ func (p *ppu) readRegister(address uint16) byte {
 		} else {
 			p.addr += 32
 		}
-		return buff
+		return value
 	default:
 		log.Fatalf("invalid register read address %d", address)
 	}
@@ -134,6 +134,12 @@ func (p *ppu) writeRegister(address uint16, value byte) {
 	default:
 		log.Fatalf("invalid register write address %d", address)
 	}
+}
+
+// writeDMA will be called 256 times in sequence by the CPU
+func (p *ppu) writeDMA(value byte) {
+	p.oamData[p.oamAddr] = value
+	p.oamAddr++
 }
 
 func (p *ppu) readByte(address uint16) byte {
@@ -218,29 +224,97 @@ func (p *ppu) render(image *image.RGBA) {
 	}
 	for tile := 0; tile < 960; tile++ {
 		tileAddress := uint16(p.vram[tile]) * 16
+		if isAnySet(p.ctrl, ctrlB) {
+			tileAddress += 0x1000
+		}
 		tileY := tile / 32
 		tileX := tile % 32
 		tileBytes := p.cart.chr[tileAddress : tileAddress+16]
 
-		colors := []color.RGBA{
-			{0, 0, 0, 255},
-			{85, 85, 85, 255},
-			{170, 170, 170, 255},
-			{255, 255, 255, 255},
+		metaX := tileX / 4
+		metaY := tileY / 4
+		metaIndex := metaY*8 + metaX
+		attr := p.vram[960+metaIndex]
+		shift := ((tile >> 4) & 4) | (tile & 2)
+
+		paletteIndex := ((attr >> shift) & 3) << 2
+
+		colors := [4]color.RGBA{
+			palette[p.paletteTable[0]],
+			palette[p.paletteTable[paletteIndex+1]],
+			palette[p.paletteTable[paletteIndex+2]],
+			palette[p.paletteTable[paletteIndex+3]],
 		}
 
 		for y := 0; y < 8; y++ {
-			hi := tileBytes[y]
-			lo := tileBytes[y+8]
+			lo := tileBytes[y]
+			hi := tileBytes[y+8]
 
 			for x := 7; x >= 0; x-- {
 				value := (hi&1)<<1 | (lo & 1)
 				hi >>= 1
 				lo >>= 1
-				image.Set(tileX*8+x, tileY*8+y, colors[value])
+
+				if isAnySet(p.mask, maskBG) {
+					image.Set(tileX*8+x, tileY*8+y, colors[value])
+				} else {
+					image.Set(tileX*8+x, tileY*8+y, color.Black)
+
+				}
 
 			}
 		}
 
+	}
+	if isAnySet(p.mask, maskSP) {
+		for i := 0; i < 256; i += 4 {
+			tileX := int(p.oamData[i+3])
+			tileY := int(p.oamData[i])
+			tileIndex := int(p.oamData[i+1])
+			attr := p.oamData[i+2]
+
+			tileAddress := tileIndex * 16
+
+			if isAnySet(p.ctrl, ctrlS) {
+				tileAddress += 0x1000
+			}
+			tileBytes := p.cart.chr[tileAddress : tileAddress+16]
+
+			paletteIndex := ((attr & 3) + 4) * 4
+
+			colors := [3]color.RGBA{
+				palette[p.paletteTable[paletteIndex+1]],
+				palette[p.paletteTable[paletteIndex+2]],
+				palette[p.paletteTable[paletteIndex+3]],
+			}
+			flipY := (attr>>7)&1 != 1
+			flipX := (attr>>6)&1 != 1
+
+			for y := 0; y < 8; y++ {
+				lo := tileBytes[y]
+				hi := tileBytes[y+8]
+				for x := 7; x >= 0; x-- {
+					value := (hi&1)<<1 | (lo & 1)
+					hi >>= 1
+					lo >>= 1
+
+					fy := y
+					fx := x
+					if !flipY {
+						fy = 7 - y
+					}
+					if !flipX {
+						fx = 7 - x
+					}
+
+					// 0 is BG
+					if value != 0 {
+						image.Set(tileX+fx, tileY+fy, colors[value-1])
+					}
+
+				}
+			}
+
+		}
 	}
 }

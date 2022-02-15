@@ -68,8 +68,18 @@
         }
       });
 
+      let start;
+      let frame = 0;
+      const frameTime = 1000 / 60;
       function renderOuter(ts) {
-        render();
+        if (start === undefined) {
+          start = ts;
+        }
+        currentFrame = (ts - start) / frameTime;
+        while (frame < currentFrame) {
+          render();
+          frame++;
+        }
         requestAnimationFrame(renderOuter);
       }
     </script>

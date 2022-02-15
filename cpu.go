@@ -127,6 +127,17 @@ func (c *cpu) write(address uint16, value byte) {
 		c.ram[address%0x800] = value
 	case address < 0x4000:
 		c.ppu.writeRegister((address-0x4000)%8, value)
+	case address == 0x4014:
+		// OAMDMA
+		dmaAddress := uint16(value) << 8
+		for i := uint16(0); i < 256; i++ {
+			dmaByte := c.readByte(dmaAddress + i)
+			c.ppu.writeDMA(dmaByte)
+		}
+		c.cycles += 513
+		if c.cycles%2 == 1 {
+			c.cycles++
+		}
 	case address == 0x4016:
 		c.joypad1.write(value)
 	case address < 0x4020:
