@@ -63,6 +63,10 @@ type ppu struct {
 
 	// data reads are buffered
 	readBuffer byte
+
+	// scroll
+	xScroll byte
+	yScroll byte
 }
 
 func newPPU(cart *cartridge) *ppu {
@@ -115,7 +119,13 @@ func (p *ppu) writeRegister(address uint16, value byte) {
 	case 3:
 		p.oamAddr = value
 	case 5:
-		// TODO implement scroll
+		if !p.w {
+			p.xScroll = value
+			p.w = true
+		} else {
+			p.yScroll = value
+			p.w = false
+		}
 	case 6:
 		if !p.w {
 			p.addr = (uint16(value) & 0x3f) << 8
@@ -175,7 +185,7 @@ func mirror(address uint16) uint16 {
 	table := address / 0x400
 
 	//TODO horizontal is hardcoded for now
-	table /= 2
+	table %= 2
 
 	// where at within the table
 	location := address % 0x400
@@ -195,6 +205,13 @@ func (p *ppu) Step() {
 	}
 
 	if p.cycle > 340 {
+		// sprite zero detection
+		x := int(p.oamData[0])
+		y := int(p.oamData[3])
+		if y == p.scanline && x < p.cycle && isAnySet(p.mask, maskSP) {
+			p.status = setBits(p.status, statusS)
+		}
+
 		p.cycle = 0
 		p.scanline++
 
@@ -206,6 +223,7 @@ func (p *ppu) Step() {
 
 	// vblank
 	if p.cycle == 1 && p.scanline == 241 {
+		p.status = resetBits(p.status, statusS)
 		p.status = setBits(p.status, statusV)
 	}
 
@@ -222,8 +240,11 @@ func (p *ppu) render(image *image.RGBA) {
 	if !isAnySet(p.mask, maskBG|maskSP) {
 		return
 	}
+
+	baseNameTable := int((p.ctrl & ctrlN) % 2)
+
 	for tile := 0; tile < 960; tile++ {
-		tileAddress := uint16(p.vram[tile]) * 16
+		tileAddress := uint16(p.vram[baseNameTable*1024+tile]) * 16
 		if isAnySet(p.ctrl, ctrlB) {
 			tileAddress += 0x1000
 		}
@@ -234,7 +255,7 @@ func (p *ppu) render(image *image.RGBA) {
 		metaX := tileX / 4
 		metaY := tileY / 4
 		metaIndex := metaY*8 + metaX
-		attr := p.vram[960+metaIndex]
+		attr := p.vram[(baseNameTable*1024+960+metaIndex)%2048]
 		shift := ((tile >> 4) & 4) | (tile & 2)
 
 		paletteIndex := ((attr >> shift) & 3) << 2
@@ -256,7 +277,52 @@ func (p *ppu) render(image *image.RGBA) {
 				lo >>= 1
 
 				if isAnySet(p.mask, maskBG) {
-					image.Set(tileX*8+x, tileY*8+y, colors[value])
+					image.Set(tileX*8+x-int(p.xScroll), tileY*8+y, colors[value])
+				} else {
+					image.Set(tileX*8+x, tileY*8+y, color.Black)
+
+				}
+
+			}
+		}
+
+	}
+
+	for tile := 0; tile < 960; tile++ {
+		tileAddress := uint16(p.vram[((baseNameTable+1)*1024+tile)%2048]) * 16
+		if isAnySet(p.ctrl, ctrlB) {
+			tileAddress += 0x1000
+		}
+		tileY := tile / 32
+		tileX := tile % 32
+		tileBytes := p.cart.chr[tileAddress : tileAddress+16]
+
+		metaX := tileX / 4
+		metaY := tileY / 4
+		metaIndex := metaY*8 + metaX
+		attr := p.vram[((baseNameTable+1)*1024+960+metaIndex)%2048]
+		shift := ((tile >> 4) & 4) | (tile & 2)
+
+		paletteIndex := ((attr >> shift) & 3) << 2
+
+		colors := [4]color.RGBA{
+			palette[p.paletteTable[0]],
+			palette[p.paletteTable[paletteIndex+1]],
+			palette[p.paletteTable[paletteIndex+2]],
+			palette[p.paletteTable[paletteIndex+3]],
+		}
+
+		for y := 0; y < 8; y++ {
+			lo := tileBytes[y]
+			hi := tileBytes[y+8]
+
+			for x := 7; x >= 0; x-- {
+				value := (hi&1)<<1 | (lo & 1)
+				hi >>= 1
+				lo >>= 1
+
+				if isAnySet(p.mask, maskBG) {
+					image.Set(tileX*8+x-int(p.xScroll)+256, tileY*8+y, colors[value])
 				} else {
 					image.Set(tileX*8+x, tileY*8+y, color.Black)
 
@@ -267,11 +333,14 @@ func (p *ppu) render(image *image.RGBA) {
 
 	}
 	if isAnySet(p.mask, maskSP) {
-		for i := 0; i < 256; i += 4 {
-			tileX := int(p.oamData[i+3])
-			tileY := int(p.oamData[i])
-			tileIndex := int(p.oamData[i+1])
-			attr := p.oamData[i+2]
+		for i := 256; i > 0; i -= 4 {
+			tileX := int(p.oamData[i-1])
+			tileY := int(p.oamData[i-4])
+			tileIndex := int(p.oamData[i-3])
+			attr := p.oamData[i-2]
+
+			// behind background?
+			behind := attr&32 == 32
 
 			tileAddress := tileIndex * 16
 
@@ -309,7 +378,9 @@ func (p *ppu) render(image *image.RGBA) {
 
 					// 0 is BG
 					if value != 0 {
-						image.Set(tileX+fx, tileY+fy, colors[value-1])
+						if !behind || image.At(tileX+fx, tileY+fy) == palette[p.paletteTable[0]] {
+							image.Set(tileX+fx, tileY+fy, colors[value-1])
+						}
 					}
 
 				}
