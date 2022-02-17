@@ -193,7 +193,7 @@ func mirror(address uint16) uint16 {
 	return table*0x400 + location
 }
 
-func (p *ppu) Step() {
+func (p *ppu) Step(image *image.RGBA) {
 	p.cycle++
 
 	renderingEnabled := isAnySet(p.mask, maskBG|maskSP)
@@ -205,12 +205,6 @@ func (p *ppu) Step() {
 	}
 
 	if p.cycle > 340 {
-		// sprite zero detection
-		x := int(p.oamData[0])
-		y := int(p.oamData[3])
-		if y == p.scanline && x < p.cycle && isAnySet(p.mask, maskSP) {
-			p.status = setBits(p.status, statusS)
-		}
 
 		p.cycle = 0
 		p.scanline++
@@ -221,14 +215,25 @@ func (p *ppu) Step() {
 	}
 	p.odd = !p.odd
 
+	if renderingEnabled && p.cycle > 0 && p.cycle <= 256 && p.scanline < 240 {
+		p.renderPixel(p.cycle-1, p.scanline, image)
+
+		// sprite zero detection
+		x := int(p.oamData[3]) + 8
+		y := int(p.oamData[0]) + 8
+		if y == p.scanline && x == p.cycle+1 && isAnySet(p.mask, maskSP) {
+			p.status = setBits(p.status, statusS)
+		}
+	}
+
 	// vblank
 	if p.cycle == 1 && p.scanline == 241 {
-		p.status = resetBits(p.status, statusS)
 		p.status = setBits(p.status, statusV)
 	}
 
 	if p.scanline == 261 && p.cycle == 1 {
 		p.status = 0
+		p.ctrl &= 0xFC
 	}
 }
 
@@ -236,102 +241,55 @@ func (p *ppu) NMITriggered() bool {
 	return isAnySet(p.status, statusV) && isAnySet(p.ctrl, ctrlV)
 }
 
+// render a single background pixel
+func (p *ppu) renderPixel(x, y int, image *image.RGBA) {
+	scrolledX := x + int(p.xScroll)
+	nameTable := int((p.ctrl & 3) % 2)
+	if scrolledX >= 256 {
+		nameTable = (nameTable + 1) % 2
+		scrolledX -= 256
+	}
+
+	tileX := scrolledX / 8
+	tileY := y / 8
+	tile := tileY*32 + tileX
+	tileAddress := uint16(p.vram[nameTable*1024+tile]) * 16
+	if isAnySet(p.ctrl, ctrlB) {
+		tileAddress += 0x1000
+	}
+	tileBytes := p.cart.chr[tileAddress : tileAddress+16]
+	metaX := tileX / 4
+	metaY := tileY / 4
+	metaIndex := metaY*8 + metaX
+	attr := p.vram[(nameTable*1024+960+metaIndex)%2048]
+	shift := ((tile >> 4) & 4) | (tile & 2)
+
+	paletteIndex := ((attr >> shift) & 3) << 2
+
+	colors := [4]color.RGBA{
+		palette[p.paletteTable[0]],
+		palette[p.paletteTable[paletteIndex+1]],
+		palette[p.paletteTable[paletteIndex+2]],
+		palette[p.paletteTable[paletteIndex+3]],
+	}
+
+	tileByteY := y % 8
+	tileByteX := 7 - (scrolledX % 8)
+
+	lo := tileBytes[tileByteY] >> tileByteX
+	hi := tileBytes[tileByteY+8] >> tileByteX
+	value := (hi&1)<<1 | (lo & 1)
+
+	if isAnySet(p.mask, maskBG) {
+		image.Set(x, y, colors[value])
+	}
+}
+
 func (p *ppu) render(image *image.RGBA) {
 	if !isAnySet(p.mask, maskBG|maskSP) {
 		return
 	}
 
-	baseNameTable := int((p.ctrl & ctrlN) % 2)
-
-	for tile := 0; tile < 960; tile++ {
-		tileAddress := uint16(p.vram[baseNameTable*1024+tile]) * 16
-		if isAnySet(p.ctrl, ctrlB) {
-			tileAddress += 0x1000
-		}
-		tileY := tile / 32
-		tileX := tile % 32
-		tileBytes := p.cart.chr[tileAddress : tileAddress+16]
-
-		metaX := tileX / 4
-		metaY := tileY / 4
-		metaIndex := metaY*8 + metaX
-		attr := p.vram[(baseNameTable*1024+960+metaIndex)%2048]
-		shift := ((tile >> 4) & 4) | (tile & 2)
-
-		paletteIndex := ((attr >> shift) & 3) << 2
-
-		colors := [4]color.RGBA{
-			palette[p.paletteTable[0]],
-			palette[p.paletteTable[paletteIndex+1]],
-			palette[p.paletteTable[paletteIndex+2]],
-			palette[p.paletteTable[paletteIndex+3]],
-		}
-
-		for y := 0; y < 8; y++ {
-			lo := tileBytes[y]
-			hi := tileBytes[y+8]
-
-			for x := 7; x >= 0; x-- {
-				value := (hi&1)<<1 | (lo & 1)
-				hi >>= 1
-				lo >>= 1
-
-				if isAnySet(p.mask, maskBG) {
-					image.Set(tileX*8+x-int(p.xScroll), tileY*8+y, colors[value])
-				} else {
-					image.Set(tileX*8+x, tileY*8+y, color.Black)
-
-				}
-
-			}
-		}
-
-	}
-
-	for tile := 0; tile < 960; tile++ {
-		tileAddress := uint16(p.vram[((baseNameTable+1)*1024+tile)%2048]) * 16
-		if isAnySet(p.ctrl, ctrlB) {
-			tileAddress += 0x1000
-		}
-		tileY := tile / 32
-		tileX := tile % 32
-		tileBytes := p.cart.chr[tileAddress : tileAddress+16]
-
-		metaX := tileX / 4
-		metaY := tileY / 4
-		metaIndex := metaY*8 + metaX
-		attr := p.vram[((baseNameTable+1)*1024+960+metaIndex)%2048]
-		shift := ((tile >> 4) & 4) | (tile & 2)
-
-		paletteIndex := ((attr >> shift) & 3) << 2
-
-		colors := [4]color.RGBA{
-			palette[p.paletteTable[0]],
-			palette[p.paletteTable[paletteIndex+1]],
-			palette[p.paletteTable[paletteIndex+2]],
-			palette[p.paletteTable[paletteIndex+3]],
-		}
-
-		for y := 0; y < 8; y++ {
-			lo := tileBytes[y]
-			hi := tileBytes[y+8]
-
-			for x := 7; x >= 0; x-- {
-				value := (hi&1)<<1 | (lo & 1)
-				hi >>= 1
-				lo >>= 1
-
-				if isAnySet(p.mask, maskBG) {
-					image.Set(tileX*8+x-int(p.xScroll)+256, tileY*8+y, colors[value])
-				} else {
-					image.Set(tileX*8+x, tileY*8+y, color.Black)
-
-				}
-
-			}
-		}
-
-	}
 	if isAnySet(p.mask, maskSP) {
 		for i := 256; i > 0; i -= 4 {
 			tileX := int(p.oamData[i-1])

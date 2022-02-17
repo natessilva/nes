@@ -32,7 +32,7 @@ func (n *Console) RenderFrame(image *image.RGBA) {
 		cycles *= 3
 		beforeNMI := n.ppu.NMITriggered()
 		for ; cycles > 0; cycles-- {
-			n.ppu.Step()
+			n.ppu.Step(image)
 		}
 		afterNMI := n.ppu.NMITriggered()
 		if !beforeNMI && afterNMI {
