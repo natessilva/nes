@@ -58,15 +58,33 @@ type ppu struct {
 	mask   byte
 	status byte
 	latch  byte
-	addr   uint16
-	w      bool
 
 	// data reads are buffered
 	readBuffer byte
 
-	// scroll
+	// vram address and registers
+
+	// The 15 bit registers t and v are composed this way during rendering:
+	// yyy NN YYYYY XXXXX
+	// ||| || ||||| +++++-- coarse X scroll
+	// ||| || +++++-------- coarse Y scroll
+	// ||| ++-------------- nametable select
+	// +++----------------- fine Y scroll
+
+	v       uint16 // Current VRAM address (15 bits)
+	t       uint16 // Temporary VRAM address (15 bits); can also be thought of as the address of the top left onscreen tile.
+	x       byte   // Fine X scroll (3 bits)
+	w       bool   // First or second write toggle (1 bit)
 	xScroll byte
 	yScroll byte
+
+	// rendering shift registers
+	nameTableByte        byte
+	attributeTableByte   byte
+	patternTableLowByte  byte
+	patternTableHighByte byte
+	// prepared 4 bit pixel data for 16 horizontal pixels
+	pixelData uint64
 }
 
 func newPPU(cart *cartridge) *ppu {
@@ -85,21 +103,21 @@ func (p *ppu) readRegister(address uint16) byte {
 		return value
 	case 7:
 		buff := p.readBuffer
-		value := p.readByte(p.addr)
+		value := p.readByte(p.v)
 		// 0-3EFF is buffered
-		if p.addr < 0x3F00 {
+		if p.v < 0x3F00 {
 			p.readBuffer = value
 			value = buff
 		} else {
 			// Reading the palettes still updates the internal buffer though,
 			//but the data placed in it is the mirrored nametable data that
 			// would appear "underneath" the palette.
-			p.readBuffer = p.readByte(p.addr - 0x1000)
+			p.readBuffer = p.readByte(p.v - 0x1000)
 		}
 		if !isAnySet(p.ctrl, ctrlI) {
-			p.addr += 1
+			p.v += 1
 		} else {
-			p.addr += 32
+			p.v += 32
 		}
 		return value
 	default:
@@ -114,32 +132,45 @@ func (p *ppu) writeRegister(address uint16, value byte) {
 	switch address {
 	case 0:
 		p.ctrl = value
+		// copy nametable select into temp vram
+		p.t = (p.t & 0xF3FF) | ((uint16(value) & ctrlN) << 10)
 	case 1:
 		p.mask = value
 	case 3:
 		p.oamAddr = value
 	case 5:
+		// scroll is a byte (0-255) and can be broken into 2 parts
+		// the high 5 bits are the coarse scroll and represent the
+		// tile index in vram. The low 3 bits are the fine scroll
+		// and represent the pixel offset within the tile.
 		if !p.w {
+			// write coarseX into the temp address
+			p.t = (p.t & 0xFFE0) | (uint16(value) >> 3)
+			// fine x has its own register
+			p.x = value & 7
 			p.xScroll = value
 			p.w = true
 		} else {
+			// write coarseY and fineY into the temp address
+			p.t = (p.t & 0x8C1F) | ((uint16(value) & 0xF8) << 2) | ((uint16(value) & 3) << 12)
 			p.yScroll = value
 			p.w = false
 		}
 	case 6:
 		if !p.w {
-			p.addr = (uint16(value) & 0x3f) << 8
+			p.t = (p.t & 0x80FF) | ((uint16(value) & 0x3F) << 8)
 			p.w = true
 		} else {
-			p.addr |= uint16(value)
+			p.t = (p.t & 0xFF00) | uint16(value)
+			p.v = p.t
 			p.w = false
 		}
 	case 7:
-		p.write(p.addr, value)
+		p.write(p.v, value)
 		if !isAnySet(p.ctrl, ctrlI) {
-			p.addr += 1
+			p.v += 1
 		} else {
-			p.addr += 32
+			p.v += 32
 		}
 	default:
 		log.Fatalf("invalid register write address %d", address)
@@ -215,8 +246,63 @@ func (p *ppu) Step(image *image.RGBA) {
 	}
 	p.odd = !p.odd
 
+	visibleScanLine := p.scanline < 240
+	preRenderScanLine := p.scanline == 261
+	fetchScanLine := preRenderScanLine || visibleScanLine
+
+	visibleCycle := 1 <= p.cycle && p.cycle <= 256
+	preRenderCycle := 321 <= p.cycle && p.cycle <= 336
+	fetchCycle := preRenderCycle || visibleCycle
+
+	copyYCycle := 280 <= p.cycle && p.cycle <= 304
+
+	// cycle accurate vram address manipulation
+	if renderingEnabled {
+		if visibleCycle && visibleScanLine {
+			p.renderBackgroundPixel(image)
+		}
+
+		// fetch the data for the background pixels
+		// we get the 4 bytes in cycles 1,3,5,7
+		// and then we combine them into 8 pixels
+		// worth of 4 bit pixel data or 32 bits of
+		// information.
+		// Since we prefetch 2 tiles worth of data
+		// our pixelData shift register is 64 bits
+		// wide and we shift off 4 bits per pixel
+		// rendered.
+		if fetchScanLine && fetchCycle {
+			p.pixelData <<= 4
+			switch p.cycle % 8 {
+			case 0:
+				p.preparePixelData()
+			case 1:
+				p.getNameTableByte()
+			case 3:
+				p.getAttributeTableByte()
+			case 5:
+				p.getPatternTableLowByte()
+			case 7:
+				p.getPatternTableHighByte()
+			}
+		}
+		if fetchScanLine {
+			if p.cycle == 256 {
+				p.incrementY()
+			}
+			if p.cycle == 257 {
+				p.copyX()
+			}
+			if fetchCycle && p.cycle%8 == 0 {
+				p.incrementX()
+			}
+		}
+		if copyYCycle && preRenderScanLine {
+			p.copyY()
+		}
+	}
+
 	if renderingEnabled && p.cycle > 0 && p.cycle <= 256 && p.scanline < 240 {
-		p.renderPixel(p.cycle-1, p.scanline, image)
 
 		// sprite zero detection
 		x := int(p.oamData[3]) + 8
@@ -237,52 +323,86 @@ func (p *ppu) Step(image *image.RGBA) {
 	}
 }
 
-func (p *ppu) NMITriggered() bool {
-	return isAnySet(p.status, statusV) && isAnySet(p.ctrl, ctrlV)
+func (p *ppu) getNameTableByte() {
+	address := 0x2000 | (p.v & 0x0FFF)
+	p.nameTableByte = p.readByte(address)
 }
 
-// render a single background pixel
-func (p *ppu) renderPixel(x, y int, image *image.RGBA) {
-	scrolledX := x + int(p.xScroll)
-	nameTable := int((p.ctrl & 3) % 2)
-	if scrolledX >= 256 {
-		nameTable = (nameTable + 1) % 2
-		scrolledX -= 256
-	}
+func (p *ppu) getAttributeTableByte() {
+	address := 0x23C0 | (p.v & 0x0C00) | ((p.v >> 4) & 0x38) | ((p.v >> 2) & 0x07)
+	p.attributeTableByte = p.readByte(address)
+}
 
-	tileX := scrolledX / 8
-	tileY := y / 8
-	tile := tileY*32 + tileX
-	tileAddress := uint16(p.vram[nameTable*1024+tile]) * 16
-	if isAnySet(p.ctrl, ctrlB) {
-		tileAddress += 0x1000
-	}
-	tileBytes := p.cart.chr[tileAddress : tileAddress+16]
-	metaX := tileX / 4
-	metaY := tileY / 4
-	metaIndex := metaY*8 + metaX
-	attr := p.vram[(nameTable*1024+960+metaIndex)%2048]
-	shift := ((tile >> 4) & 4) | (tile & 2)
+func (p *ppu) getPatternTableLowByte() {
+	y := (p.v >> 12) & 7
+	nameTable := uint16((p.ctrl & ctrlB) >> 4)
+	tileIndex := uint16(p.nameTableByte)
+	address := 0x1000*uint16(nameTable) + tileIndex*16 + y
+	p.patternTableLowByte = p.readByte(address)
+}
+
+func (p *ppu) getPatternTableHighByte() {
+	y := (p.v >> 12) & 7
+	nameTable := uint16((p.ctrl & ctrlB) >> 4)
+	tileIndex := uint16(p.nameTableByte)
+	address := 0x1000*uint16(nameTable) + tileIndex*16 + y
+	p.patternTableHighByte = p.readByte(address + 8)
+}
+
+// preparePixelData takes the information from the
+// nameTableByte, attributeTableByte, low and high
+// pattern table bytes and converts them into 8 pixels
+// worth of 4 bits of palette index data
+// Though we are preparing a single tile, we prefetch
+// two tiles before starting to render a line, so we
+// store the result in the low half of a 64 bit register.
+// this is to account for the fineX scroll. A give 8
+// pixel section might be split across two tiles.
+func (p *ppu) preparePixelData() {
+	attr := p.attributeTableByte
+	shift := ((p.v >> 4) & 4) | (p.v & 2)
 
 	paletteIndex := ((attr >> shift) & 3) << 2
+	lo := p.patternTableLowByte
+	hi := p.patternTableHighByte
 
-	colors := [4]color.RGBA{
-		palette[p.paletteTable[0]],
-		palette[p.paletteTable[paletteIndex+1]],
-		palette[p.paletteTable[paletteIndex+2]],
-		palette[p.paletteTable[paletteIndex+3]],
+	var pixelData uint64
+	for x := 0; x < 8; x++ {
+		// value is a number from 0-15 representing an
+		// index into the background section of the palette
+		value := paletteIndex | ((hi & 0x80) >> 6) | ((lo & 0x80) >> 7)
+		hi <<= 1
+		lo <<= 1
+		pixelData = (pixelData << 4) | uint64(value)
 	}
 
-	tileByteY := y % 8
-	tileByteX := 7 - (scrolledX % 8)
+	// we now have the 32 pixels representing 8 palette indices
+	// as we read the next 8 pixels we'll shift this left 32 bits
+	p.pixelData |= pixelData
+}
 
-	lo := tileBytes[tileByteY] >> tileByteX
-	hi := tileBytes[tileByteY+8] >> tileByteX
-	value := (hi&1)<<1 | (lo & 1)
+// using the prepared pixelData in combination with the fineX scroll
+// figure out the palette index of a single pixel and render it.
+func (p *ppu) renderBackgroundPixel(image *image.RGBA) {
+	firstTilePixelData := p.pixelData >> 32
 
-	if isAnySet(p.mask, maskBG) {
-		image.Set(x, y, colors[value])
+	// because we are always shifting our prepared pixel data by one pixel
+	// we can always use the same offset to get the next pixel
+	shift := (7 - p.x) * 4
+	pixelData := byte((firstTilePixelData >> shift) & 0x0F)
+
+	x := p.cycle - 1
+	y := p.scanline
+
+	// background color
+	if pixelData%4 == 0 {
+		pixelData = 0
 	}
+	image.Set(x, y, palette[p.paletteTable[pixelData]])
+}
+
+func (p *ppu) NMITriggered() bool {
+	return isAnySet(p.status, statusV) && isAnySet(p.ctrl, ctrlV)
 }
 
 func (p *ppu) render(image *image.RGBA) {
@@ -346,4 +466,64 @@ func (p *ppu) render(image *image.RGBA) {
 
 		}
 	}
+}
+
+// incrementX during rendering after each 8 pixels is rendered
+// Each nametable is 32 tiles wide. When scrolling, we might
+// render parts of 2 nametables. If we've reached the end of a
+// nametable, wrap around back to zero and switch to the next
+// horizontal nametable.
+func (p *ppu) incrementX() {
+	if p.v&0x001F == 31 {
+		// set coarseX to zero
+		p.v &= 0xFFE0
+		// toggle the low nametable select bit
+		p.v ^= 0x400
+	} else {
+		p.v++
+	}
+}
+
+// incrementY during rendering after each scanLine. We increment
+// fineY (0-7), wrapping around to zero and incrementing coarseY
+// if we wrap. When we increment coarseY (0-30), wrapping around
+// to zero and switching to the next vertical nametable
+func (p *ppu) incrementY() {
+	// if fine Y < 7
+	if (p.v & 0x7000) != 0x7000 {
+		// increment fine Y
+		p.v += 0x1000
+	} else {
+		// fine Y = 0
+		p.v &= 0x8FFF
+		// let y = coarse Y
+		y := (p.v & 0x03E0) >> 5
+		if y == 29 {
+			y = 0
+			// switch vertical nametable
+			p.v ^= 0x0800
+		} else if y == 31 {
+			// coarse Y = 0, nametable not switched
+			y = 0
+		} else {
+			// increment coarse Y
+			y += 1
+			// put coarse Y back into v
+			p.v = (p.v & 0xFC1F) | (y << 5)
+		}
+	}
+}
+
+// copy the horizontal information from t after each scanline
+// reseting the x position back to the left side of the screen
+// and resetting the horizontal bit of the nametable
+func (p *ppu) copyX() {
+	p.v = (p.v & 0xFBE0) | (p.t & 0x041F)
+}
+
+// copy the vertical information from t after each frame
+// resetting the y position back to the top of the screen
+// and resetting the vertical bit of the nametable
+func (p *ppu) copyY() {
+	p.v = (p.v & 0x841F) | (p.t & 0x7BE0)
 }
