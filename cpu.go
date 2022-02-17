@@ -79,7 +79,7 @@ func (c *cpu) nmi() int {
 	return 7
 }
 
-func (c *cpu) TriggerNMI() {
+func (c *cpu) triggerNMI() {
 	c.nmiTriggered = true
 }
 

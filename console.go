@@ -30,14 +30,13 @@ func (n *Console) RenderFrame(image *image.RGBA) {
 	for {
 		cycles := n.cpu.Step()
 		cycles *= 3
-		beforeNMI := n.ppu.NMITriggered()
+		beforeNMI := n.ppu.nmiTriggered()
 		for ; cycles > 0; cycles-- {
-			n.ppu.Step(image)
+			n.ppu.step(image)
 		}
-		afterNMI := n.ppu.NMITriggered()
+		afterNMI := n.ppu.nmiTriggered()
 		if !beforeNMI && afterNMI {
-			n.ppu.render(image)
-			n.cpu.TriggerNMI()
+			n.cpu.triggerNMI()
 			break
 		}
 	}

@@ -2,7 +2,6 @@ package nes
 
 import (
 	"image"
-	"image/color"
 	"log"
 )
 
@@ -48,6 +47,17 @@ type ppu struct {
 	oamAddr byte
 	oamData [256]byte
 
+	// we have room for 8 sprites per scanline
+	// as we find the 8 sprites on the line
+	// also store off the pixel data, indices,
+	// priorities, and x positions of them all.
+	spritePixelData  [8]uint32
+	spriteIndices    [8]byte
+	spritePriorities [8]bool
+	spriteXPositions [8]byte
+	// how many sprites did we find
+	spriteCount int
+
 	// render timing
 	cycle    int
 	scanline int
@@ -71,20 +81,18 @@ type ppu struct {
 	// ||| ++-------------- nametable select
 	// +++----------------- fine Y scroll
 
-	v       uint16 // Current VRAM address (15 bits)
-	t       uint16 // Temporary VRAM address (15 bits); can also be thought of as the address of the top left onscreen tile.
-	x       byte   // Fine X scroll (3 bits)
-	w       bool   // First or second write toggle (1 bit)
-	xScroll byte
-	yScroll byte
+	v uint16 // Current VRAM address (15 bits)
+	t uint16 // Temporary VRAM address (15 bits); can also be thought of as the address of the top left onscreen tile.
+	x byte   // Fine X scroll (3 bits)
+	w bool   // First or second write toggle (1 bit)
 
 	// rendering shift registers
 	nameTableByte        byte
 	attributeTableByte   byte
 	patternTableLowByte  byte
 	patternTableHighByte byte
-	// prepared 4 bit pixel data for 16 horizontal pixels
-	pixelData uint64
+	// prepared 4 bit background pixel data for 16 horizontal pixels
+	backgroundPixelData uint64
 }
 
 func newPPU(cart *cartridge) *ppu {
@@ -148,12 +156,10 @@ func (p *ppu) writeRegister(address uint16, value byte) {
 			p.t = (p.t & 0xFFE0) | (uint16(value) >> 3)
 			// fine x has its own register
 			p.x = value & 7
-			p.xScroll = value
 			p.w = true
 		} else {
 			// write coarseY and fineY into the temp address
-			p.t = (p.t & 0x8C1F) | ((uint16(value) & 0xF8) << 2) | ((uint16(value) & 3) << 12)
-			p.yScroll = value
+			p.t = (p.t & 0x8C1F) | ((uint16(value) & 0x07) << 12) | ((uint16(value) & 0xF8) << 2)
 			p.w = false
 		}
 	case 6:
@@ -188,7 +194,7 @@ func (p *ppu) readByte(address uint16) byte {
 	case address < 0x2000:
 		return p.cart.readByte(address)
 	case address < 0x3F00:
-		return p.vram[mirror(address)]
+		return p.vram[mirror(p.cart.mirror, address)]
 	case address < 0x4000:
 		return p.paletteTable[address%32]
 	default:
@@ -200,7 +206,7 @@ func (p *ppu) readByte(address uint16) byte {
 func (p *ppu) write(address uint16, value byte) {
 	switch {
 	case address < 0x3F00:
-		p.vram[mirror(address)] = value
+		p.vram[mirror(p.cart.mirror, address)] = value
 	case address < 0x4000:
 		p.paletteTable[address%32] = value
 	default:
@@ -209,14 +215,18 @@ func (p *ppu) write(address uint16, value byte) {
 }
 
 // mirror the vram nameTables
-func mirror(address uint16) uint16 {
+func mirror(mirrorMode byte, address uint16) uint16 {
 	// map to the vram address space
 	address = (address - 0x2000) % 0x1000
 	// which of the 4 name tables
 	table := address / 0x400
 
-	//TODO horizontal is hardcoded for now
-	table %= 2
+	// todo implement more mirroring modes
+	if mirrorMode == 1 {
+		table %= 2
+	} else {
+		table /= 2
+	}
 
 	// where at within the table
 	location := address % 0x400
@@ -224,7 +234,7 @@ func mirror(address uint16) uint16 {
 	return table*0x400 + location
 }
 
-func (p *ppu) Step(image *image.RGBA) {
+func (p *ppu) step(image *image.RGBA) {
 	p.cycle++
 
 	renderingEnabled := isAnySet(p.mask, maskBG|maskSP)
@@ -259,7 +269,7 @@ func (p *ppu) Step(image *image.RGBA) {
 	// cycle accurate vram address manipulation
 	if renderingEnabled {
 		if visibleCycle && visibleScanLine {
-			p.renderBackgroundPixel(image)
+			p.renderPixel(image)
 		}
 
 		// fetch the data for the background pixels
@@ -272,10 +282,10 @@ func (p *ppu) Step(image *image.RGBA) {
 		// wide and we shift off 4 bits per pixel
 		// rendered.
 		if fetchScanLine && fetchCycle {
-			p.pixelData <<= 4
+			p.backgroundPixelData <<= 4
 			switch p.cycle % 8 {
 			case 0:
-				p.preparePixelData()
+				p.prepareBackgroundPixelData()
 			case 1:
 				p.getNameTableByte()
 			case 3:
@@ -300,15 +310,12 @@ func (p *ppu) Step(image *image.RGBA) {
 		if copyYCycle && preRenderScanLine {
 			p.copyY()
 		}
-	}
-
-	if renderingEnabled && p.cycle > 0 && p.cycle <= 256 && p.scanline < 240 {
-
-		// sprite zero detection
-		x := int(p.oamData[3]) + 8
-		y := int(p.oamData[0]) + 8
-		if y == p.scanline && x == p.cycle+1 && isAnySet(p.mask, maskSP) {
-			p.status = setBits(p.status, statusS)
+		if p.cycle == 257 {
+			if visibleScanLine {
+				p.prepareSpritePixelData()
+			} else {
+				p.spriteCount = 0
+			}
 		}
 	}
 
@@ -349,7 +356,7 @@ func (p *ppu) getPatternTableHighByte() {
 	p.patternTableHighByte = p.readByte(address + 8)
 }
 
-// preparePixelData takes the information from the
+// prepareBackgroundPixelData takes the information from the
 // nameTableByte, attributeTableByte, low and high
 // pattern table bytes and converts them into 8 pixels
 // worth of 4 bits of palette index data
@@ -358,7 +365,7 @@ func (p *ppu) getPatternTableHighByte() {
 // store the result in the low half of a 64 bit register.
 // this is to account for the fineX scroll. A give 8
 // pixel section might be split across two tiles.
-func (p *ppu) preparePixelData() {
+func (p *ppu) prepareBackgroundPixelData() {
 	attr := p.attributeTableByte
 	shift := ((p.v >> 4) & 4) | (p.v & 2)
 
@@ -378,94 +385,138 @@ func (p *ppu) preparePixelData() {
 
 	// we now have the 32 pixels representing 8 palette indices
 	// as we read the next 8 pixels we'll shift this left 32 bits
-	p.pixelData |= pixelData
+	p.backgroundPixelData |= pixelData
 }
 
-// using the prepared pixelData in combination with the fineX scroll
-// figure out the palette index of a single pixel and render it.
-func (p *ppu) renderBackgroundPixel(image *image.RGBA) {
-	firstTilePixelData := p.pixelData >> 32
+// once per visible scanline, prepare the pixel data for the
+// next scanline's 8 possible sprites
+func (p *ppu) prepareSpritePixelData() {
+	spriteCount := 0
+	for i := byte(0); i < 64; i++ {
+		tileX := p.oamData[i*4+3]
+		tileY := p.oamData[i*4]
+		tileIndex := int(p.oamData[i*4+1])
+		attr := p.oamData[i*4+2]
+
+		tileRow := p.scanline - int(tileY)
+		if tileRow < 0 || tileRow >= 8 {
+			// this sprite isn't visible on this scanline
+			continue
+		}
+		if attr&0x80 == 0x80 {
+			tileRow = 7 - tileRow
+		}
+
+		tileAddress := tileIndex*16 + tileRow
+		if isAnySet(p.ctrl, ctrlS) {
+			tileAddress += 0x1000
+		}
+		paletteIndex := (attr & 3) << 2
+		lo := p.cart.chr[tileAddress]
+		hi := p.cart.chr[tileAddress+8]
+		var value byte
+		var patternData uint32
+		for x := 0; x < 8; x++ {
+			if attr&0x40 == 0x40 {
+				value = paletteIndex | (lo & 1) | (hi&1)<<1
+				lo >>= 1
+				hi >>= 1
+			} else {
+				value = paletteIndex | ((lo & 0x80) >> 7) | ((hi & 0x80) >> 6)
+				lo <<= 1
+				hi <<= 1
+			}
+			patternData <<= 4
+			patternData |= uint32(value)
+		}
+		if spriteCount < 8 {
+			p.spritePixelData[spriteCount] = patternData
+			p.spriteIndices[spriteCount] = i
+			p.spritePriorities[spriteCount] = attr&32 == 32
+			p.spriteXPositions[spriteCount] = tileX
+		}
+
+		spriteCount++
+	}
+	if spriteCount > 8 {
+		spriteCount = 8
+		p.status = setBits(p.status, statusO)
+	}
+	p.spriteCount = spriteCount
+}
+
+func (p *ppu) getBackgroundPixel() byte {
+	if !isAnySet(p.mask, maskBG) {
+		return 0
+	}
+	firstTilePixelData := p.backgroundPixelData >> 32
 
 	// because we are always shifting our prepared pixel data by one pixel
 	// we can always use the same offset to get the next pixel
 	shift := (7 - p.x) * 4
-	pixelData := byte((firstTilePixelData >> shift) & 0x0F)
+	return byte((firstTilePixelData >> shift) & 0x0F)
+}
+
+// get the first visible pixel that we find at X
+// also return whether its index for sprite
+// zero detection
+func (p *ppu) getSpritePixel() (int, byte) {
+	if !isAnySet(p.mask, maskSP) {
+		return 0, 0
+	}
+	x := p.cycle - 1
+	for i := 0; i < p.spriteCount; i++ {
+		spriteColumn := x - int(p.spriteXPositions[i])
+		if spriteColumn < 0 || spriteColumn > 7 {
+			// this sprite isn't visible
+			continue
+		}
+		shift := (7 - spriteColumn) * 4
+		pixelData := byte((p.spritePixelData[i] >> shift) & 0x0F)
+
+		if pixelData%4 == 0 {
+			// transparent pixel
+			continue
+		}
+		return i, pixelData
+	}
+	return 0, 0
+}
+
+// using the prepared pixelData in combination with the fineX scroll
+// figure out the palette index of a single pixel and render it.
+func (p *ppu) renderPixel(image *image.RGBA) {
+	bgPixelData := p.getBackgroundPixel()
+	index, spPixelData := p.getSpritePixel()
 
 	x := p.cycle - 1
 	y := p.scanline
 
+	var pixelData byte
 	// background color
-	if pixelData%4 == 0 {
+	bg0 := bgPixelData%4 == 0
+	sp0 := spPixelData%4 == 0
+	if bg0 && sp0 {
 		pixelData = 0
+	} else if bg0 && !sp0 {
+		pixelData = spPixelData | 0x10
+	} else if !bg0 && sp0 {
+		pixelData = bgPixelData
+	} else {
+		if p.spriteIndices[index] == 0 {
+			p.status = setBits(p.status, statusS)
+		}
+		if !p.spritePriorities[index] {
+			pixelData = spPixelData | 0x10
+		} else {
+			pixelData = bgPixelData
+		}
 	}
 	image.Set(x, y, palette[p.paletteTable[pixelData]])
 }
 
-func (p *ppu) NMITriggered() bool {
+func (p *ppu) nmiTriggered() bool {
 	return isAnySet(p.status, statusV) && isAnySet(p.ctrl, ctrlV)
-}
-
-func (p *ppu) render(image *image.RGBA) {
-	if !isAnySet(p.mask, maskBG|maskSP) {
-		return
-	}
-
-	if isAnySet(p.mask, maskSP) {
-		for i := 256; i > 0; i -= 4 {
-			tileX := int(p.oamData[i-1])
-			tileY := int(p.oamData[i-4])
-			tileIndex := int(p.oamData[i-3])
-			attr := p.oamData[i-2]
-
-			// behind background?
-			behind := attr&32 == 32
-
-			tileAddress := tileIndex * 16
-
-			if isAnySet(p.ctrl, ctrlS) {
-				tileAddress += 0x1000
-			}
-			tileBytes := p.cart.chr[tileAddress : tileAddress+16]
-
-			paletteIndex := ((attr & 3) + 4) * 4
-
-			colors := [3]color.RGBA{
-				palette[p.paletteTable[paletteIndex+1]],
-				palette[p.paletteTable[paletteIndex+2]],
-				palette[p.paletteTable[paletteIndex+3]],
-			}
-			flipY := (attr>>7)&1 != 1
-			flipX := (attr>>6)&1 != 1
-
-			for y := 0; y < 8; y++ {
-				lo := tileBytes[y]
-				hi := tileBytes[y+8]
-				for x := 7; x >= 0; x-- {
-					value := (hi&1)<<1 | (lo & 1)
-					hi >>= 1
-					lo >>= 1
-
-					fy := y
-					fx := x
-					if !flipY {
-						fy = 7 - y
-					}
-					if !flipX {
-						fx = 7 - x
-					}
-
-					// 0 is BG
-					if value != 0 {
-						if !behind || image.At(tileX+fx, tileY+fy) == palette[p.paletteTable[0]] {
-							image.Set(tileX+fx, tileY+fy, colors[value-1])
-						}
-					}
-
-				}
-			}
-
-		}
-	}
 }
 
 // incrementX during rendering after each 8 pixels is rendered
@@ -508,9 +559,9 @@ func (p *ppu) incrementY() {
 		} else {
 			// increment coarse Y
 			y += 1
-			// put coarse Y back into v
-			p.v = (p.v & 0xFC1F) | (y << 5)
 		}
+		// put coarse Y back into v
+		p.v = (p.v & 0xFC1F) | (y << 5)
 	}
 }
 

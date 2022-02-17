@@ -3,6 +3,7 @@ package nes
 import (
 	"bufio"
 	"fmt"
+	"image"
 	"os"
 	"strings"
 	"testing"
@@ -30,10 +31,12 @@ func TestLogFile(t *testing.T) {
 	defer logFile.Close()
 	scanner := bufio.NewScanner(logFile)
 
+	image := image.NewRGBA(image.Rect(0, 0, 256, 240))
+
 	// CPU starts at cycle 7 and PPU starts a cycle 21 in the log file
 	totalCycles := 7
 	for i := 0; i < 21; i++ {
-		ppu.Step()
+		ppu.step(image)
 	}
 
 	for scanner.Scan() {
@@ -101,7 +104,7 @@ func TestLogFile(t *testing.T) {
 		totalCycles += cycles
 		cycles *= 3
 		for i := 0; i < cycles; i++ {
-			ppu.Step()
+			ppu.step(image)
 		}
 	}
 }
