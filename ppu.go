@@ -196,6 +196,9 @@ func (p *ppu) readByte(address uint16) byte {
 	case address < 0x3F00:
 		return p.vram[mirror(p.cart.mirror, address)]
 	case address < 0x4000:
+		if address%4 == 0 && address >= 16 {
+			address -= 16
+		}
 		return p.paletteTable[address%32]
 	default:
 		log.Fatalf("invalid ppu read address %04X\n", address)
@@ -208,6 +211,9 @@ func (p *ppu) write(address uint16, value byte) {
 	case address < 0x3F00:
 		p.vram[mirror(p.cart.mirror, address)] = value
 	case address < 0x4000:
+		if address%4 == 0 && address >= 16 {
+			address -= 16
+		}
 		p.paletteTable[address%32] = value
 	default:
 		log.Fatalf("invalid ppu write address %04X\n", address)
