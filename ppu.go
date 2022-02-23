@@ -518,7 +518,7 @@ func (p *ppu) renderPixel(image *image.RGBA) {
 			pixelData = bgPixelData
 		}
 	}
-	image.Set(x, y, palette[p.paletteTable[pixelData]])
+	image.SetRGBA(x, y, palette[p.paletteTable[pixelData]])
 }
 
 func (p *ppu) nmiTriggered() bool {

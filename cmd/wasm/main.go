@@ -19,7 +19,6 @@ func main() {
 	canvas := document.Call("getElementById", "canvas")
 	ctx := canvas.Call("getContext", "2d")
 
-	copyBuf := js.Global().Get("Uint8Array").New(len(image.Pix))
 	imgData := ctx.Call("createImageData", width, height)
 
 	loadROM := func(this js.Value, inputs []js.Value) interface{} {
@@ -42,8 +41,7 @@ func main() {
 			return nil
 		}
 		console.RenderFrame(image)
-		js.CopyBytesToJS(copyBuf, image.Pix)
-		imgData.Get("data").Call("set", copyBuf)
+		js.CopyBytesToJS(imgData.Get("data"), image.Pix)
 		ctx.Call("putImageData", imgData, 0, 0)
 		return nil
 	}
