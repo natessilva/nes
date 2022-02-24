@@ -21,7 +21,7 @@ type iNESHeader struct {
 // Every .nes file starts with ASCII NES followed by $1A
 const magicNumber = 0x1a53454e
 
-func readFile(r io.Reader) (*cartridge, error) {
+func readFile(r io.Reader) (cartridge, error) {
 	header := iNESHeader{}
 	err := binary.Read(r, binary.LittleEndian, &header)
 	if err != nil {
@@ -44,11 +44,13 @@ func readFile(r io.Reader) (*cartridge, error) {
 		return nil, errors.Wrap(err, "CHR")
 	}
 
-	mirror := header.Flags6 & 1
+	// min of 8kB of chr
+	if header.NumCHR == 0 {
+		chr = make([]byte, 0x2000)
+	}
 
-	return &cartridge{
-		mirror: mirror,
-		prg:    prg,
-		chr:    chr,
-	}, nil
+	mirror := header.Flags6 & 1
+	mapper := (header.Flags6 >> 4) | (header.Flags7 & 0xF0)
+
+	return newCart(mapper, mirror, prg, chr), nil
 }

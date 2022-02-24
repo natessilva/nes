@@ -33,7 +33,7 @@ const (
 )
 
 type ppu struct {
-	cart *cartridge
+	cart cartridge
 
 	// 2 screens worth of ram
 	vram [2048]byte
@@ -95,7 +95,7 @@ type ppu struct {
 	backgroundPixelData uint64
 }
 
-func newPPU(cart *cartridge) *ppu {
+func newPPU(cart cartridge) *ppu {
 	return &ppu{
 		cart: cart,
 	}
@@ -194,7 +194,7 @@ func (p *ppu) readByte(address uint16) byte {
 	case address < 0x2000:
 		return p.cart.readByte(address)
 	case address < 0x3F00:
-		return p.vram[mirror(p.cart.mirror, address)]
+		return p.vram[p.cart.mirror(address)]
 	case address < 0x4000:
 		if address%4 == 0 && address >= 16 {
 			address -= 16
@@ -208,8 +208,10 @@ func (p *ppu) readByte(address uint16) byte {
 
 func (p *ppu) write(address uint16, value byte) {
 	switch {
+	case address < 0x2000:
+		p.cart.write(address, value)
 	case address < 0x3F00:
-		p.vram[mirror(p.cart.mirror, address)] = value
+		p.vram[p.cart.mirror(address)] = value
 	case address < 0x4000:
 		if address%4 == 0 && address >= 16 {
 			address -= 16
@@ -218,26 +220,6 @@ func (p *ppu) write(address uint16, value byte) {
 	default:
 		log.Fatalf("invalid ppu write address %04X\n", address)
 	}
-}
-
-// mirror the vram nameTables
-func mirror(mirrorMode byte, address uint16) uint16 {
-	// map to the vram address space
-	address = (address - 0x2000) % 0x1000
-	// which of the 4 name tables
-	table := address / 0x400
-
-	// todo implement more mirroring modes
-	if mirrorMode == 1 {
-		table %= 2
-	} else {
-		table /= 2
-	}
-
-	// where at within the table
-	location := address % 0x400
-
-	return table*0x400 + location
 }
 
 func (p *ppu) step(image *image.RGBA) {
@@ -403,23 +385,43 @@ func (p *ppu) prepareSpritePixelData() {
 		tileY := p.oamData[i*4]
 		tileIndex := int(p.oamData[i*4+1])
 		attr := p.oamData[i*4+2]
-
 		tileRow := p.scanline - int(tileY)
-		if tileRow < 0 || tileRow >= 8 {
-			// this sprite isn't visible on this scanline
+		table := 0
+
+		// 16 pixel sprites
+		if isAnySet(p.ctrl, ctrlH) {
+			// first bit determines the table
+			table = tileIndex & 1
+			tileIndex = tileIndex & 0xFE
+			if attr&0x80 == 0x80 {
+				tileRow = 15 - tileRow
+			}
+			// 16 pixel sprites still are arranged
+			// as 8x8 tiles. They are just two
+			// tiles in a row.
+			if tileRow > 7 {
+				tileRow -= 8
+				tileIndex += 1
+			}
+
+		} else {
+			if isAnySet(p.ctrl, ctrlS) {
+				table = 1
+			}
+			if attr&0x80 == 0x80 {
+				tileRow = 7 - tileRow
+			}
+		}
+
+		// is the sprite visible on this scanline
+		if tileRow < 0 || tileRow > 7 {
 			continue
 		}
-		if attr&0x80 == 0x80 {
-			tileRow = 7 - tileRow
-		}
 
-		tileAddress := tileIndex*16 + tileRow
-		if isAnySet(p.ctrl, ctrlS) {
-			tileAddress += 0x1000
-		}
+		tileAddress := table*0x1000 + tileIndex*16 + tileRow
 		paletteIndex := (attr & 3) << 2
-		lo := p.cart.chr[tileAddress]
-		hi := p.cart.chr[tileAddress+8]
+		lo := p.cart.readByte(uint16(tileAddress))
+		hi := p.cart.readByte(uint16(tileAddress + 8))
 		var value byte
 		var patternData uint32
 		for x := 0; x < 8; x++ {
@@ -518,7 +520,7 @@ func (p *ppu) renderPixel(image *image.RGBA) {
 			pixelData = bgPixelData
 		}
 	}
-	image.SetRGBA(x, y, palette[p.paletteTable[pixelData]])
+	image.SetRGBA(int(x), int(y), palette[p.paletteTable[pixelData]])
 }
 
 func (p *ppu) nmiTriggered() bool {

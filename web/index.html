@@ -51,18 +51,14 @@
       );
 
       document.addEventListener("keydown", (event) => {
-        if (keydown) {
-          console.log(JSON.stringify(event.key));
-          keydown(event.key);
+        if (keydown && keydown(event.key)) {
           event.preventDefault();
           event.stopPropagation();
         }
       });
 
       document.addEventListener("keyup", (event) => {
-        if (keyup) {
-          console.log(JSON.stringify(event.key));
-          keyup(event.key);
+        if (keyup && keyup(event.key)) {
           event.preventDefault();
           event.stopPropagation();
         }

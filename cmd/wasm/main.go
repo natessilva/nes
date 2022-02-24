@@ -49,7 +49,7 @@ func main() {
 
 	keydown := func(this js.Value, inputs []js.Value) interface{} {
 		if console == nil {
-			return nil
+			return false
 		}
 		switch inputs[0].String() {
 		case "Enter":
@@ -68,14 +68,16 @@ func main() {
 			console.SetJoypad(nes.ButtonLeft, true)
 		case "ArrowRight":
 			console.SetJoypad(nes.ButtonRight, true)
+		default:
+			return false
 		}
-		return nil
+		return true
 	}
 	js.Global().Set("keydown", js.FuncOf(keydown))
 
 	keyup := func(this js.Value, inputs []js.Value) interface{} {
 		if console == nil {
-			return nil
+			return false
 		}
 		switch inputs[0].String() {
 		case "Enter":
@@ -94,8 +96,10 @@ func main() {
 			console.SetJoypad(nes.ButtonLeft, false)
 		case "ArrowRight":
 			console.SetJoypad(nes.ButtonRight, false)
+		default:
+			return false
 		}
-		return nil
+		return true
 	}
 	js.Global().Set("keyup", js.FuncOf(keyup))
 

@@ -44,7 +44,7 @@ type cpu struct {
 
 	ram [2048]byte
 
-	cart *cartridge
+	cart cartridge
 	ppu  *ppu
 
 	nmiTriggered bool
@@ -53,7 +53,7 @@ type cpu struct {
 	joypad1 *joypad
 }
 
-func newCPU(cart *cartridge, ppu *ppu, j1 *joypad) *cpu {
+func newCPU(cart cartridge, ppu *ppu, j1 *joypad) *cpu {
 	cpu := &cpu{
 		cart:    cart,
 		ppu:     ppu,
@@ -142,6 +142,8 @@ func (c *cpu) write(address uint16, value byte) {
 		c.joypad1.write(value)
 	case address < 0x4020:
 		// TODO implement APU
+	case address >= 0x6000:
+		c.cart.write(address, value)
 	default:
 		log.Fatalf("invalid write address %04X", address)
 	}
