@@ -44,14 +44,19 @@ Controls are hardcoded and only keyboard controls are supported currently.
 
 Arrow keys, Enter, Space, D and F map to the NES arrow buttons, Start, Select, B, and A buttons respectively
 
-# Frame timing
+# Mappers supported
 
-60 FPS is acheived with requestAnimationFrame and some naive logic to skip frames when that is too fast. It appears to work well on my local machine for a time, but also appears to slow down periodically. I imagine this might be challenging to overcome in a javascript environment.
+- [x] NROM
+- [x] MMC1
+- [x] UNROM
+- [x] CNROM
+- [ ] MMC3 (Coming soon!)
+
+Currently implemented mappers should support around 60% of all games. MMC3 support should bring this number closer to 85%.
 
 # Work remaining
 
 In short, a lot 😅
 
-- NROM is the only mapper currently implemented
 - Audio support has not been started
 - Put more design effort into the website

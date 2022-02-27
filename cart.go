@@ -46,6 +46,12 @@ func newCart(mapper, mirror byte, prg, chr []byte) cartridge {
 			prg:        prg,
 			chr:        chr,
 		}
+	case 3:
+		return &cnROM{
+			mirrorMode: mirror,
+			prg:        prg,
+			chr:        chr,
+		}
 	default:
 		log.Fatalf("unsupported mapper %d", mapper)
 	}
