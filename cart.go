@@ -40,6 +40,12 @@ func newCart(mapper, mirror byte, prg, chr []byte) cartridge {
 		}
 	case 1:
 		return newMMC1(mirror, prg, chr)
+	case 2:
+		return &unROM{
+			mirrorMode: mirror,
+			prg:        prg,
+			chr:        chr,
+		}
 	default:
 		log.Fatalf("unsupported mapper %d", mapper)
 	}
