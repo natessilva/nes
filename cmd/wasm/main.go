@@ -4,9 +4,17 @@ import (
 	"bytes"
 	"image"
 	"syscall/js"
+	"time"
 
 	"github.com/natessilva/nes"
 )
+
+func renderLoop(fn func()) {
+	ticker := time.Tick(time.Second / 60)
+	for range ticker {
+		fn()
+	}
+}
 
 func main() {
 	c := make(chan bool)
@@ -28,24 +36,23 @@ func main() {
 		r := bytes.NewReader(inBuf)
 
 		// TODO error handling
-		console = nes.NewConsole()
-		console.LoadROM(r)
-
-		js.Global().Call("renderOuter")
+		c, err := nes.NewConsole(r)
+		if err != nil {
+			return nil
+		}
+		console = c
 		return nil
 	}
 	js.Global().Set("loadROM", js.FuncOf(loadROM))
 
-	render := func(this js.Value, inputs []js.Value) interface{} {
+	go renderLoop(func() {
 		if console == nil {
-			return nil
+			return
 		}
 		console.RenderFrame(image)
 		js.CopyBytesToJS(imgData.Get("data"), image.Pix)
 		ctx.Call("putImageData", imgData, 0, 0)
-		return nil
-	}
-	js.Global().Set("render", js.FuncOf(render))
+	})
 
 	keydown := func(this js.Value, inputs []js.Value) interface{} {
 		if console == nil {

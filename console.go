@@ -11,41 +11,43 @@ type Console struct {
 	joypad1 *joypad
 }
 
-func NewConsole() *Console {
-	return &Console{}
+func NewConsole(r io.Reader) (*Console, error) {
+	c := &Console{}
+	err := c.loadROM(r)
+	return c, err
 }
 
-func (n *Console) LoadROM(r io.Reader) error {
+func (c *Console) loadROM(r io.Reader) error {
 	cart, err := readFile(r)
 	if err != nil {
 		return err
 	}
-	n.ppu = newPPU(cart)
-	n.joypad1 = &joypad{}
-	n.cpu = newCPU(cart, n.ppu, n.joypad1)
+	c.ppu = newPPU(cart)
+	c.joypad1 = &joypad{}
+	c.cpu = newCPU(cart, c.ppu, c.joypad1)
 	return nil
 }
 
-func (n *Console) RenderFrame(image *image.RGBA) {
+func (c *Console) RenderFrame(image *image.RGBA) {
 	for {
-		cycles := n.cpu.Step()
+		cycles := c.cpu.Step()
 		cycles *= 3
-		beforeNMI := n.ppu.nmiTriggered()
+		beforeNMI := c.ppu.nmiTriggered()
 		for ; cycles > 0; cycles-- {
-			n.ppu.step(image)
+			c.ppu.step(image)
 		}
-		afterNMI := n.ppu.nmiTriggered()
+		afterNMI := c.ppu.nmiTriggered()
 		if !beforeNMI && afterNMI {
-			n.cpu.triggerNMI()
+			c.cpu.triggerNMI()
 			break
 		}
 	}
 }
 
-func (n *Console) SetJoypad(button byte, pressed bool) {
+func (c *Console) SetJoypad(button byte, pressed bool) {
 	if pressed {
-		n.joypad1.buttonState = setBits(n.joypad1.buttonState, button)
+		c.joypad1.buttonState = setBits(c.joypad1.buttonState, button)
 	} else {
-		n.joypad1.buttonState = resetBits(n.joypad1.buttonState, button)
+		c.joypad1.buttonState = resetBits(c.joypad1.buttonState, button)
 	}
 }

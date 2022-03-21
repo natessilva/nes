@@ -63,18 +63,6 @@
           event.stopPropagation();
         }
       });
-
-      let then = 0;
-      const frameTime = 1000 / 60;
-      function renderOuter(ts) {
-        const elapsed = ts - then;
-
-        if (elapsed > frameTime) {
-          render();
-          then = ts - (elapsed % frameTime);
-        }
-        requestAnimationFrame(renderOuter);
-      }
     </script>
   </body>
 </html>
