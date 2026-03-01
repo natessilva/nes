@@ -27,6 +27,31 @@
       <canvas id="canvas" width="256" height="240"></canvas>
     </div>
     <script>
+      let audioCtx = null;
+      let nextPlayTime = 0;
+      const SAMPLE_RATE = 44100;
+
+      function initAudio() {
+        if (audioCtx) return;
+        audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+        nextPlayTime = 0;
+      }
+
+      function queueAudio(uint8Array, sampleCount) {
+        if (!audioCtx || sampleCount === 0) return;
+        const floats = new Float32Array(uint8Array.buffer, 0, sampleCount);
+        const audioBuffer = audioCtx.createBuffer(1, sampleCount, SAMPLE_RATE);
+        audioBuffer.getChannelData(0).set(floats);
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        if (nextPlayTime < audioCtx.currentTime) {
+          nextPlayTime = audioCtx.currentTime + 2 / 60;
+        }
+        source.start(nextPlayTime);
+        nextPlayTime += sampleCount / SAMPLE_RATE;
+      }
+
       const go = new Go();
       WebAssembly.instantiateStreaming(fetch("nes.wasm"), go.importObject).then(
         (result) => {

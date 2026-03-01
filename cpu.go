@@ -46,6 +46,7 @@ type cpu struct {
 
 	cart cartridge
 	ppu  *ppu
+	apu  *apu
 
 	nmiTriggered bool
 
@@ -53,10 +54,11 @@ type cpu struct {
 	joypad1 *joypad
 }
 
-func newCPU(cart cartridge, ppu *ppu, j1 *joypad) *cpu {
+func newCPU(cart cartridge, ppu *ppu, apu *apu, j1 *joypad) *cpu {
 	cpu := &cpu{
 		cart:    cart,
 		ppu:     ppu,
+		apu:     apu,
 		joypad1: j1,
 	}
 	cpu.reset()
@@ -90,11 +92,13 @@ func (c *cpu) readByte(address uint16) byte {
 		return c.ram[address%0x800]
 	case address < 0x4000:
 		return c.ppu.readRegister((address - 0x4000) % 8)
+	case address == 0x4015:
+		return c.apu.readStatus()
 	case address == 0x4016:
 		// joypad 1
 		return c.joypad1.read()
 	case address < 0x4020:
-		// todo APU
+		// unmapped
 	case address >= 0x6000:
 		return c.cart.readByte(address)
 	default:
@@ -127,6 +131,8 @@ func (c *cpu) write(address uint16, value byte) {
 		c.ram[address%0x800] = value
 	case address < 0x4000:
 		c.ppu.writeRegister((address-0x4000)%8, value)
+	case address <= 0x4013:
+		c.apu.writeRegister(address, value)
 	case address == 0x4014:
 		// OAMDMA
 		dmaAddress := uint16(value) << 8
@@ -138,10 +144,14 @@ func (c *cpu) write(address uint16, value byte) {
 		if c.cycles%2 == 1 {
 			c.cycles++
 		}
+	case address == 0x4015:
+		c.apu.writeRegister(address, value)
 	case address == 0x4016:
 		c.joypad1.write(value)
+	case address == 0x4017:
+		c.apu.writeRegister(address, value)
 	case address < 0x4020:
-		// TODO implement APU
+		// unmapped
 	case address >= 0x6000:
 		c.cart.write(address, value)
 	default:

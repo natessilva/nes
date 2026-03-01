@@ -28,6 +28,7 @@ func main() {
 	ctx := canvas.Call("getContext", "2d")
 
 	imgData := ctx.Call("createImageData", width, height)
+	audioBytesBuf := js.Global().Get("Uint8Array").New(736 * 4)
 
 	loadROM := func(this js.Value, inputs []js.Value) interface{} {
 		fileArr := inputs[0]
@@ -41,6 +42,7 @@ func main() {
 			return nil
 		}
 		console = c
+		js.Global().Call("initAudio")
 		return nil
 	}
 	js.Global().Set("loadROM", js.FuncOf(loadROM))
@@ -52,6 +54,11 @@ func main() {
 		console.RenderFrame(image)
 		js.CopyBytesToJS(imgData.Get("data"), image.Pix)
 		ctx.Call("putImageData", imgData, 0, 0)
+		audioBytes, sampleCount := console.AudioSamples()
+		if sampleCount > 0 {
+			js.CopyBytesToJS(audioBytesBuf, audioBytes)
+			js.Global().Call("queueAudio", audioBytesBuf, sampleCount)
+		}
 	})
 
 	keydown := func(this js.Value, inputs []js.Value) interface{} {

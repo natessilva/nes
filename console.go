@@ -8,6 +8,7 @@ import (
 type Console struct {
 	ppu     *ppu
 	cpu     *cpu
+	apu     *apu
 	joypad1 *joypad
 }
 
@@ -23,17 +24,21 @@ func (c *Console) loadROM(r io.Reader) error {
 		return err
 	}
 	c.ppu = newPPU(cart)
+	c.apu = newAPU()
 	c.joypad1 = &joypad{}
-	c.cpu = newCPU(cart, c.ppu, c.joypad1)
+	c.cpu = newCPU(cart, c.ppu, c.apu, c.joypad1)
 	return nil
 }
 
 func (c *Console) RenderFrame(image *image.RGBA) {
 	for {
-		cycles := c.cpu.Step()
-		cycles *= 3
+		cpuCycles := c.cpu.Step()
+		for i := 0; i < cpuCycles; i++ {
+			c.apu.step()
+		}
+		ppuCycles := cpuCycles * 3
 		beforeNMI := c.ppu.nmiTriggered()
-		for ; cycles > 0; cycles-- {
+		for ; ppuCycles > 0; ppuCycles-- {
 			c.ppu.step(image)
 		}
 		afterNMI := c.ppu.nmiTriggered()
@@ -42,6 +47,10 @@ func (c *Console) RenderFrame(image *image.RGBA) {
 			break
 		}
 	}
+}
+
+func (c *Console) AudioSamples() ([]byte, int) {
+	return c.apu.flushSamples()
 }
 
 func (c *Console) SetJoypad(button byte, pressed bool) {
